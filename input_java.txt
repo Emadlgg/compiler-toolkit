@@ -1,0 +1,39 @@
+public class SistemaEstudiantes {
+
+    static int totalEstudiantes = 0;
+    static double promedio = 0.0;
+
+    public static void main(String[] args) {
+        int x = 10;
+        double pi = 3.14;
+        boolean flag = true;
+
+        if (x > 5) {
+            x = x + 1;
+        }
+
+        if (flag) {
+            x = x - 1;
+        } else {
+            x = x + 2;
+        }
+
+        while (x > 0) {
+            x = x - 1;
+        }
+
+        for (int i = 0; i < 10; i++) {
+            x = x + i;
+        }
+
+        return;
+    }
+
+    public static int suma(int a, int b) {
+        return a + b;
+    }
+
+    public static boolean esMayor(int a, int b) {
+        return a > b;
+    }
+}

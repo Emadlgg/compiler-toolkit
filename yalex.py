@@ -93,7 +93,8 @@ def main():
             from yalex.visualizer import draw_afd
             yal_name = input_file.replace(".yal", "")
             draw_afd(afd, base + "_afd",
-                     title=f"AFD generado desde {input_file}")
+                     title=f"AFD generado desde {input_file}",
+                     max_states=100)
 
         return
 
