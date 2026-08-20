@@ -1,46 +1,14 @@
-# =========================
-# Python cache
-# =========================
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 
-# =========================
-# Archivos generados por el generador
-# =========================
-lexer.py
-mylexer.py
-temp_lexer.py
-*_lexer.py
-
-# =========================
-# Archivos generados por el visualizador
-# =========================
-*.png
-*.pdf
-*.svg
-
-# =========================
-# Archivos de entorno
-# =========================
-.env
 .venv/
 venv/
 
-# =========================
-# Archivos del sistema
-# =========================
+.vscode/
+.idea/
+
+*.interp
+*.tokens
+
 .DS_Store
 Thumbs.db
-
-# =========================
-# Configuración de VSCode
-# =========================
-.vscode/
-
-# =========================
-# Logs o temporales
-# =========================
-*.log
-*.tmp
