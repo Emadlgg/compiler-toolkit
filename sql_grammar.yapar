@@ -1,0 +1,118 @@
+/* ================================================ */
+/*     Especificacion sintactica de SQL             */
+/*     Para YAPar - Generador de Parsers            */
+/* ================================================ */
+
+%token KW_SELECT KW_FROM KW_WHERE
+%token KW_INSERT KW_INTO KW_VALUES
+%token KW_UPDATE KW_SET KW_DELETE
+%token KW_AND KW_OR KW_NOT KW_NULL
+%token ID INT_LIT FLOAT_LIT STRING_LIT
+%token OP_EQ OP_NEQ OP_LT OP_GT OP_LEQ OP_GEQ
+%token STAR LPAREN RPAREN COMMA SEMICOLON
+%token _WS _LINE_CMT
+
+IGNORE _WS
+IGNORE _LINE_CMT
+
+%%
+
+program:
+    statement_list
+;
+
+statement_list:
+    statement_list statement
+  | statement
+;
+
+statement:
+    select_stmt
+  | insert_stmt
+  | update_stmt
+  | delete_stmt
+;
+
+/* ---- SELECT ---- */
+select_stmt:
+    KW_SELECT select_list KW_FROM ID where_opt SEMICOLON
+;
+
+select_list:
+    STAR
+  | column_list
+;
+
+column_list:
+    column_list COMMA ID
+  | ID
+;
+
+/* ---- INSERT ---- */
+insert_stmt:
+    KW_INSERT KW_INTO ID KW_VALUES LPAREN value_list RPAREN SEMICOLON
+  | KW_INSERT KW_INTO ID LPAREN column_list RPAREN KW_VALUES LPAREN value_list RPAREN SEMICOLON
+;
+
+value_list:
+    value_list COMMA value
+  | value
+;
+
+/* ---- UPDATE ---- */
+update_stmt:
+    KW_UPDATE ID KW_SET assignment_list where_opt SEMICOLON
+;
+
+assignment_list:
+    assignment_list COMMA assignment
+  | assignment
+;
+
+assignment:
+    ID OP_EQ value
+;
+
+/* ---- DELETE ---- */
+delete_stmt:
+    KW_DELETE KW_FROM ID where_opt SEMICOLON
+;
+
+/* ---- WHERE ---- */
+where_opt:
+    KW_WHERE condition
+  |
+;
+
+condition:
+    condition KW_OR conjunction
+  | conjunction
+;
+
+conjunction:
+    conjunction KW_AND predicate
+  | predicate
+;
+
+predicate:
+    ID comparator value
+  | KW_NOT predicate
+  | LPAREN condition RPAREN
+;
+
+comparator:
+    OP_EQ
+  | OP_NEQ
+  | OP_LT
+  | OP_GT
+  | OP_LEQ
+  | OP_GEQ
+;
+
+value:
+    INT_LIT
+  | FLOAT_LIT
+  | STRING_LIT
+  | KW_NULL
+  | ID
+;

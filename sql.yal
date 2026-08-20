@@ -1,0 +1,48 @@
+(* ================================================ *)
+(*         Especificacion lexica de SQL             *)
+(*         Para YALex - Generador de Lexers         *)
+(* ================================================ *)
+
+let _WS         = [' ''\t''\n''\r']+
+let INT_LIT     = [0-9]+
+let FLOAT_LIT   = [0-9]+"."[0-9]+
+let ID          = ([a-zA-Z]|"_")([a-zA-Z0-9]|"_")*
+let STRING_LIT  = "'"[^"'"]*"'"
+let _LINE_CMT   = "--"[^'\n']*
+
+rule gettoken =
+
+    {_WS}           { return _WS }
+  | {_LINE_CMT}     { return _LINE_CMT }
+
+  | "SELECT"        { return KW_SELECT }
+  | "FROM"          { return KW_FROM }
+  | "WHERE"         { return KW_WHERE }
+  | "INSERT"        { return KW_INSERT }
+  | "INTO"          { return KW_INTO }
+  | "VALUES"        { return KW_VALUES }
+  | "UPDATE"        { return KW_UPDATE }
+  | "SET"           { return KW_SET }
+  | "DELETE"        { return KW_DELETE }
+  | "AND"           { return KW_AND }
+  | "OR"            { return KW_OR }
+  | "NOT"           { return KW_NOT }
+  | "NULL"          { return KW_NULL }
+
+  | {FLOAT_LIT}     { return FLOAT_LIT }
+  | {INT_LIT}       { return INT_LIT }
+  | {STRING_LIT}    { return STRING_LIT }
+  | {ID}            { return ID }
+
+  | "<="            { return OP_LEQ }
+  | ">="            { return OP_GEQ }
+  | "!="            { return OP_NEQ }
+  | "="             { return OP_EQ }
+  | "<"             { return OP_LT }
+  | ">"             { return OP_GT }
+
+  | "*"             { return STAR }
+  | "("             { return LPAREN }
+  | ")"             { return RPAREN }
+  | ","             { return COMMA }
+  | ";"             { return SEMICOLON }
