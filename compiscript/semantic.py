@@ -1,6 +1,6 @@
 """
 semantic.py — Visitor semántico para Compiscript.
-Adaptado a la gramática Compiscript.g4 actual.
+Adaptado a la gramática grammars/compiscript/grammars\compiscript\Compiscript.g4 actual.
 """
 import sys
 import os

@@ -12,3 +12,7 @@ venv/
 
 .DS_Store
 Thumbs.db
+*.pyc
+*.pyo
+.tmp/
+temp_*.py

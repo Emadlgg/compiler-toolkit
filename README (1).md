@@ -1,6 +1,7 @@
 # Generador de Compiladores --- YALex, YAPar y Compiscript
 
-Proyecto académico desarrollado para el curso **Contrucción de Compiladores** de la **Universidad del Valle de Guatemala (UVG)**.
+Proyecto académico desarrollado para el curso **Diseño de Lenguajes de
+Programación** de la **Universidad del Valle de Guatemala (UVG)**.
 
 El proyecto reúne tres etapas principales del diseño de compiladores:
 generación de analizadores léxicos, generación de analizadores
@@ -8,7 +9,7 @@ sintácticos y análisis semántico. Además, incluye una interfaz gráfica
 tipo IDE que integra los tres proyectos y permite inspeccionar
 visualmente sus resultados.
 
-> **Curso:** Construcción de Compiladores\
+> **Curso:** Diseño de Lenguajes de Programación\
 > **Universidad:** Universidad del Valle de Guatemala\
 > **Lenguaje principal:** Python 3.11\
 > **Año:** 2026
@@ -969,6 +970,6 @@ Universidad del Valle de Guatemala
 
 # Curso
 
-**Construcción de Compiladores**\
+**Diseño de Lenguajes de Programación**\
 Universidad del Valle de Guatemala\
 2026
