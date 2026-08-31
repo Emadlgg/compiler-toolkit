@@ -1,4 +1,4 @@
-# Generated from grammars/compiscript/grammars\compiscript\Compiscript.g4 by ANTLR 4.13.2
+# Generated from grammars/compiscript/Compiscript.g4 by ANTLR 4.13.2
 from antlr4 import *
 from io import StringIO
 import sys
@@ -254,7 +254,7 @@ class CompiscriptLexer(Lexer):
                   "IntegerLiteral", "StringLiteral", "Identifier", "WS", 
                   "COMMENT", "MULTILINE_COMMENT" ]
 
-    grammarFileName = "grammars/compiscript/grammars\compiscript\Compiscript.g4"
+    grammarFileName = "Compiscript.g4"
 
     def __init__(self, input=None, output:TextIO = sys.stdout):
         super().__init__(input, output)

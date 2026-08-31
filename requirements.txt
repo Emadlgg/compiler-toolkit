@@ -1,0 +1,14 @@
+# ============================================================
+# Compiler Toolkit - Dependencias de Python
+# Python 3.11
+# ============================================================
+
+# Runtime de ANTLR4 utilizado por el analizador de Compiscript.
+# Debe coincidir con la version usada para generar
+# CompiscriptLexer.py, CompiscriptParser.py y CompiscriptVisitor.py.
+antlr4-python3-runtime==4.13.2
+
+# Interfaz de Python para Graphviz.
+# Utilizada por YALex/YAPar para generar visualizaciones
+# de automatas y arboles.
+graphviz==0.21

@@ -1,4 +1,4 @@
-# Generated from grammars/compiscript/grammars\compiscript\Compiscript.g4 by ANTLR 4.13.2
+# Generated from grammars/compiscript/Compiscript.g4 by ANTLR 4.13.2
 # encoding: utf-8
 from antlr4 import *
 from io import StringIO
@@ -185,7 +185,7 @@ def serializedATN():
 
 class CompiscriptParser ( Parser ):
 
-    grammarFileName = "grammars/compiscript/grammars\compiscript\Compiscript.g4"
+    grammarFileName = "Compiscript.g4"
 
     atn = ATNDeserializer().deserialize(serializedATN())
 

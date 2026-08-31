@@ -1,120 +1,109 @@
-# Generador de Compiladores --- YALex, YAPar y Compiscript
+# ⚙️ Compiler Toolkit
 
-Proyecto académico desarrollado para el curso **Contrucción de Compiladores** de la **Universidad del Valle de Guatemala (UVG)**.
+### Generador de analizadores léxicos, sintácticos y semánticos
 
-El proyecto reúne tres etapas principales del diseño de compiladores:
-generación de analizadores léxicos, generación de analizadores
-sintácticos y análisis semántico. Además, incluye una interfaz gráfica
-tipo IDE que integra los tres proyectos y permite inspeccionar
-visualmente sus resultados.
+**Proyecto académico — Construcción de Compiladores**
+Universidad del Valle de Guatemala · 2026
 
-> **Curso:** Construcción de Compiladores\
-> **Universidad:** Universidad del Valle de Guatemala\
-> **Lenguaje principal:** Python 3.11\
-> **Año:** 2026
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python\&logoColor=white)
+![ANTLR](https://img.shields.io/badge/ANTLR-4.13.2-EF7B4D)
+![Graphviz](https://img.shields.io/badge/Graphviz-Visualización-2596BE)
+![GUI](https://img.shields.io/badge/GUI-Tkinter-4B8BBE)
+![Status](https://img.shields.io/badge/Estado-Completado-success)
 
-------------------------------------------------------------------------
+---
 
-## Contenido
+## 📖 Sobre el proyecto
 
--   [Descripción general](#descripción-general)
--   [Proyecto 1 --- YALex](#proyecto-1--yalex)
--   [Proyecto 2 --- YAPar](#proyecto-2--yapar)
--   [Proyecto 3 --- Compiscript](#proyecto-3--compiscript)
--   [Interfaz gráfica](#interfaz-gráfica)
--   [Estructura del proyecto](#estructura-del-proyecto)
--   [Instalación](#instalación)
--   [Uso](#uso)
--   [Casos de prueba](#casos-de-prueba)
--   [Tecnologías utilizadas](#tecnologías-utilizadas)
--   [Video de demostración](#video-de-demostración)
--   [Autor](#autor)
+**Compiler Toolkit** reúne en una sola aplicación tres etapas fundamentales de la construcción de compiladores.
 
-------------------------------------------------------------------------
+El proyecto implementa desde cero algoritmos clásicos de análisis léxico y sintáctico, además de integrar **ANTLR4** para construir el front-end de **Compiscript**, un lenguaje basado en un subconjunto de TypeScript.
 
-# Descripción general
+El toolkit está compuesto por:
 
-El proyecto está dividido en tres componentes principales:
+| Componente           | Entrada              | Resultado                               |
+| -------------------- | -------------------- | --------------------------------------- |
+| 🔤 **YALex**         | `.yal`               | Generador de analizadores léxicos       |
+| 🌳 **YAPar**         | `.yapar`             | Parsers SLR(1), LALR y LL(1)            |
+| 🧠 **Compiscript**   | `.cps`               | Análisis léxico, sintáctico y semántico |
+| 🖥️ **Compiler IDE** | Todos los anteriores | Interfaz gráfica integrada              |
 
-  -----------------------------------------------------------------------
-  Proyecto                Entrada                 Función
-  ----------------------- ----------------------- -----------------------
-  **YALex**               `.yal`                  Genera analizadores
-                                                  léxicos
+Además de las herramientas de línea de comandos, el proyecto incluye una interfaz gráfica desarrollada con **Tkinter**, desde la cual es posible explorar tokens, autómatas, tablas de parsing, árboles sintácticos, errores semánticos y tablas de símbolos.
 
-  **YAPar**               `.yapar`                Genera analizadores
-                                                  sintácticos SLR(1),
-                                                  LALR y LL(1)
+---
 
-  **Compiscript**         `.cps`                  Realiza análisis
-                                                  léxico, sintáctico y
-                                                  semántico
+# 🧭 Contenido
 
-  **GUI**                 `.yal`, `.yapar`,       Integra y visualiza los
-                          `.txt`, `.cps`          tres proyectos
-  -----------------------------------------------------------------------
+* [Arquitectura general](#-arquitectura-general)
+* [YALex — Analizador léxico](#-yalex--generador-de-analizadores-léxicos)
+* [YAPar — Analizador sintáctico](#-yapar--generador-de-analizadores-sintácticos)
+* [Compiscript — Análisis semántico](#-compiscript--análisis-semántico)
+* [Compiler IDE](#️-compiler-ide)
+* [Instalación](#-instalación)
+* [Inicio rápido](#-inicio-rápido)
+* [Uso desde CLI](#️-uso-desde-cli)
+* [Casos de prueba](#-casos-de-prueba)
+* [Estructura del repositorio](#-estructura-del-repositorio)
+* [Tecnologías](#️-tecnologías)
+* [Autor](#-autor)
 
-Java y SQL se utilizan como casos de prueba para YALex y YAPar.
-Compiscript, basado en un subconjunto de TypeScript, utiliza ANTLR4 y
-agrega análisis semántico, scopes anidados, tabla de símbolos,
-funciones, clases y control de flujo.
+---
 
-El flujo general del proyecto puede verse de la siguiente forma:
+# 🏗 Arquitectura general
 
-``` text
-                    ┌──────────────┐
-                    │ Código fuente│
-                    └──────┬───────┘
-                           │
-          ┌────────────────┼─────────────────┐
-          │                │                 │
-          ▼                ▼                 ▼
-       YALex             YAPar           Compiscript
-          │                │                 │
-          ▼                ▼                 ▼
-     Lexer / AFD      Parser / Tablas   ANTLR Lexer/Parser
-                                             │
-                                             ▼
-                                     Análisis semántico
-                                             │
-                                             ▼
-                                      Tabla de símbolos
+El proyecto está organizado como un conjunto de componentes independientes que pueden utilizarse desde línea de comandos o desde la interfaz gráfica.
+
+```text
+                         COMPILER TOOLKIT
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+           YALex             YAPar          Compiscript
+              │                │                │
+              ▼                ▼                ▼
+        Regex Parser      Grammar Parser     ANTLR Lexer
+              │                │                │
+              ▼                ▼                ▼
+           Thompson        FIRST/FOLLOW      ANTLR Parser
+              │                │                │
+              ▼                ▼                ▼
+             AFN              LR(0)        Parse Tree
+              │                │                │
+              ▼          ┌─────┼─────┐          ▼
+        Subconjuntos      │     │     │    SemanticAnalyzer
+              │          SLR  LALR  LL(1)        │
+              ▼                                ▼
+             AFD                          SymbolTable
+              │                                │
+              ▼                                ▼
+       Lexer generado                    Semantic Errors
+              │
+              └──────────────┬─────────────────┘
+                             ▼
+                       ┌───────────┐
+                       │    GUI    │
+                       │  Tkinter  │
+                       └───────────┘
 ```
 
-------------------------------------------------------------------------
+Esta separación permite estudiar individualmente cada fase del proceso de compilación y observar cómo los conceptos teóricos se traducen a implementaciones concretas.
 
-# Proyecto 1 --- YALex
+---
 
-## Generador de Analizadores Léxicos
+# 🔤 YALex — Generador de Analizadores Léxicos
 
-YALex permite construir automáticamente un lexer en Python a partir de
-una especificación `.yal`.
+YALex genera automáticamente un **lexer ejecutable en Python** a partir de una especificación `.yal`.
 
-### Características
+El proceso implementa directamente los algoritmos fundamentales utilizados para convertir expresiones regulares en autómatas finitos.
 
--   Lectura y parseo de especificaciones YALex.
--   Definiciones mediante `let`.
--   Reglas léxicas mediante `rule`.
--   Parser propio de expresiones regulares.
--   Construcción de árboles de expresión.
--   Construcción de Thompson.
--   Generación de AFN.
--   Unión de múltiples AFN.
--   Conversión AFN → AFD mediante construcción de subconjuntos.
--   Longest match.
--   Prioridad de reglas según su orden de definición.
--   Tokens ignorados.
--   Generación automática de un lexer ejecutable en Python.
--   Visualización de árboles de expresiones regulares.
--   Visualización del AFD mediante Graphviz.
+## Pipeline
 
-### Pipeline
-
-``` text
+```text
 archivo.yal
     │
     ▼
-Parser YALex
+YALex Parser
     │
     ▼
 Expresiones regulares
@@ -126,7 +115,7 @@ Expresiones regulares
 Construcción de Thompson
     │
     ▼
-AFNs individuales
+AFN individuales
     │
     ▼
 AFN combinado
@@ -138,12 +127,28 @@ Construcción de subconjuntos
 AFD
     │
     ▼
-Lexer generado en Python
+Lexer Python
 ```
 
-### Módulos principales
+## Características
 
-``` text
+* Definiciones mediante `let`.
+* Reglas léxicas mediante `rule`.
+* Parser propio de expresiones regulares.
+* Construcción de árboles de expresión.
+* Construcción de Thompson.
+* Generación y combinación de AFN.
+* Conversión AFN → AFD mediante construcción de subconjuntos.
+* Estrategia **longest match**.
+* Prioridad según el orden de las reglas.
+* Tokens ignorados.
+* Generación automática de código Python.
+* Visualización de árboles de expresiones regulares.
+* Visualización del AFD mediante Graphviz.
+
+## Módulos principales
+
+```text
 regex/
 ├── regex_node.py
 └── regex_parser.py
@@ -162,72 +167,66 @@ yalex/
 └── yalex_reader.py
 ```
 
-------------------------------------------------------------------------
+---
 
-# Proyecto 2 --- YAPar
+# 🌳 YAPar — Generador de Analizadores Sintácticos
 
-## Generador de Analizadores Sintácticos
+YAPar recibe una gramática `.yapar` y construye analizadores sintácticos utilizando tres estrategias diferentes:
 
-YAPar genera analizadores sintácticos a partir de archivos `.yapar`.
+* **SLR(1)**
+* **LALR**
+* **LL(1)**
 
-Se implementaron tres métodos:
+Esto permite comparar directamente métodos de parsing **bottom-up** y **top-down** sobre una misma gramática.
 
--   **SLR(1)**
--   **LALR**
--   **LL(1)**
+## Pipeline
 
-### Características
-
--   Parser de gramáticas `.yapar`.
--   Declaración de terminales mediante `%token`.
--   Tokens ignorados mediante `IGNORE`.
--   Manejo de producciones.
--   Cálculo iterativo de FIRST.
--   Cálculo iterativo de FOLLOW.
--   Construcción del autómata LR(0).
--   Closure y GOTO.
--   Construcción de tablas SLR(1).
--   Construcción de tablas LALR.
--   Construcción de tablas LL(1).
--   Detección y reporte de conflictos.
--   Motor Shift-Reduce para SLR/LALR.
--   Motor predictivo para LL(1).
--   Visualización de estados LR(0).
--   Visualización de tablas de parsing.
--   Reporte de aceptación o rechazo.
-
-### Pipeline
-
-``` text
+```text
 archivo.yapar
       │
       ▼
- Parser YAPar
+  YAPar Parser
       │
       ▼
  Producciones
       │
-      ▼
-FIRST / FOLLOW
+      ├──────────────► FIRST / FOLLOW
       │
       ▼
-Autómata LR(0)
+ Autómata LR(0)
       │
-      ├──────────────┬──────────────┐
-      ▼              ▼              ▼
-   SLR(1)          LALR           LL(1)
-      │              │              │
-      └──────────────┼──────────────┘
-                     ▼
-             Análisis sintáctico
-                     │
-                     ▼
-              ACCEPT / REJECT
+      ├────────────┬────────────┐
+      ▼            ▼            ▼
+    SLR(1)       LALR         LL(1)
+      │            │            │
+      └────────────┼────────────┘
+                   ▼
+             Parser Engine
+                   │
+                   ▼
+             ACCEPT / REJECT
 ```
 
-### Módulos principales
+## Características
 
-``` text
+* Lectura de gramáticas `.yapar`.
+* Declaración de terminales mediante `%token`.
+* Tokens ignorados mediante `IGNORE`.
+* Cálculo iterativo de **FIRST** y **FOLLOW**.
+* Construcción de autómatas **LR(0)**.
+* Operaciones `closure()` y `goto()`.
+* Construcción de tablas **SLR(1)**.
+* Construcción de tablas **LALR**.
+* Construcción de tablas **LL(1)**.
+* Detección y reporte de conflictos.
+* Motor Shift-Reduce para SLR/LALR.
+* Motor predictivo para LL(1).
+* Visualización de estados LR(0).
+* Reporte de aceptación o rechazo.
+
+## Módulos principales
+
+```text
 yapar/
 ├── first_follow.py
 ├── lr0.py
@@ -238,59 +237,54 @@ yapar/
 └── yapar_parser.py
 ```
 
-------------------------------------------------------------------------
+---
 
-# Proyecto 3 --- Compiscript
+# 🧠 Compiscript — Análisis Semántico
 
-## Analizador Semántico
+**Compiscript** es un lenguaje basado en un subconjunto de TypeScript.
 
-Compiscript es un lenguaje basado en un subconjunto de TypeScript. Para
-esta etapa se utiliza **ANTLR4** para generar el lexer y parser a partir
-de:
+A diferencia de YALex y YAPar, en esta etapa se utiliza **ANTLR4** para generar automáticamente el lexer y parser a partir de:
 
-``` text
+```text
 grammars/compiscript/Compiscript.g4
 ```
 
-Sobre el árbol generado por ANTLR se ejecuta un `SemanticAnalyzer`
-basado en el patrón Visitor.
+Posteriormente, un analizador semántico propio recorre el árbol generado por ANTLR mediante el patrón **Visitor**.
 
-### Pipeline
+## Pipeline
 
-``` text
+```text
 archivo.cps
     │
     ▼
 ANTLR Lexer
     │
-    ├──► Errores léxicos
-    │
+    ├────► Errores léxicos
     ▼
 ANTLR Parser
     │
-    ├──► Errores sintácticos
-    │
+    ├────► Errores sintácticos
     ▼
-Árbol sintáctico
+Parse Tree
     │
     ▼
 SemanticAnalyzer
     │
-    ├──► Errores semánticos
+    ├────► Errores semánticos
+    ▼
+SymbolTable
     │
     ▼
-Tabla de símbolos
+Scopes / Symbols / Types
 ```
 
-El análisis semántico se ejecuta únicamente cuando el análisis léxico y
-sintáctico finaliza correctamente. De esta forma no se construye una
-tabla de símbolos a partir de un programa sintácticamente inválido.
+En la interfaz gráfica, el análisis semántico se realiza únicamente cuando las fases léxica y sintáctica han terminado sin errores.
 
 ## Sistema de tipos
 
-Se manejan tipos como:
+El analizador trabaja con tipos como:
 
-``` text
+```text
 integer
 string
 boolean
@@ -299,55 +293,73 @@ void
 any
 ```
 
-El analizador verifica, entre otros:
+También maneja tipos correspondientes a clases y representaciones internas para colecciones.
 
--   Asignaciones.
--   Compatibilidad de tipos.
--   Operaciones aritméticas.
--   Operaciones lógicas.
--   Comparaciones.
--   Inferencia básica de tipos.
--   Tipos de retorno.
+Entre las verificaciones realizadas se encuentran:
 
-## Ámbitos y tabla de símbolos
+* Asignaciones.
+* Compatibilidad de tipos.
+* Operaciones aritméticas.
+* Operaciones lógicas.
+* Comparaciones.
+* Inferencia básica.
+* Tipos de retorno.
 
-La implementación utiliza scopes anidados para representar:
+## Scopes y tabla de símbolos
 
--   Scope global.
--   Funciones.
--   Clases.
--   Métodos.
--   Bloques.
--   Bucles.
+Los ámbitos están organizados jerárquicamente:
 
-Se validan casos como:
+```text
+global
+│
+├── function
+│   ├── block
+│   └── loop
+│
+└── class
+    └── method
+        └── block
+```
 
--   Variables no declaradas.
--   Redeclaraciones dentro del mismo ámbito.
--   Acceso a símbolos de ámbitos superiores.
--   Variables locales.
--   Parámetros.
--   Constantes.
--   Closures y funciones anidadas.
+La resolución de símbolos comienza en el scope actual y continúa hacia sus scopes padre.
+
+Esto permite representar:
+
+* Variables globales y locales.
+* Parámetros.
+* Funciones.
+* Clases.
+* Métodos.
+* Bloques.
+* Ciclos.
+* Funciones anidadas.
+* Visibilidad léxica.
+
+El analizador detecta, entre otros casos:
+
+* Variables no declaradas.
+* Redeclaraciones.
+* Parámetros duplicados.
+* Uso incorrecto de constantes.
+* Llamadas con argumentos incompatibles.
+* Uso inválido de `return`.
+* Acceso a miembros inexistentes.
 
 ## Funciones
 
-El análisis de funciones contempla:
+Se contempla:
 
--   Cantidad de argumentos.
--   Tipos de argumentos.
--   Tipo de retorno.
--   Parámetros duplicados.
--   Redeclaración.
--   Recursividad.
--   Funciones anidadas.
--   `return` fuera de una función.
+* Declaración.
+* Parámetros.
+* Tipos de argumentos.
+* Tipo de retorno.
+* Recursividad.
+* Funciones anidadas.
+* Resolución de símbolos externos.
 
 ## Control de flujo
 
-Se soportan construcciones como:
-
-``` text
+```text
 if / else
 while
 do-while
@@ -360,49 +372,36 @@ return
 try / catch
 ```
 
-También se valida el tipo de las condiciones y se detectan situaciones
-como código muerto después de instrucciones de transferencia cuando
-corresponde.
+También se verifica el tipo de las condiciones y se detectan situaciones de código muerto después de determinadas instrucciones de transferencia.
 
 ## Clases y objetos
 
-Compiscript contempla:
+Compiscript incluye soporte para:
 
--   Declaración de clases.
--   Atributos.
--   Métodos.
--   Constructores.
--   Herencia.
--   `this`.
--   Creación de objetos mediante `new`.
--   Búsqueda de miembros heredados.
-
-El analizador puede validar la existencia de clases, atributos y
-métodos, así como los argumentos y tipos utilizados en llamadas y
-constructores.
+* Clases.
+* Atributos.
+* Métodos.
+* Constructores.
+* Herencia.
+* `this`.
+* Instanciación mediante `new`.
+* Resolución de miembros heredados.
 
 ## Listas
 
-Se incluyen validaciones para:
+El análisis contempla listas y acceso mediante índices.
 
--   Compatibilidad entre elementos.
--   Tipo de elementos.
--   Acceso mediante índices.
--   Índices de tipo `integer`.
+```typescript
+[1, 2, 3]          // válido
+[1, "hola", 3]     // tipos incompatibles
 
-Ejemplo conceptual:
-
-``` text
-[1, 2, 3]          ✓
-[1, "hola", 3]     ✗ Tipos incompatibles
-
-numeros[0]         ✓
-numeros["hola"]    ✗ El índice debe ser integer
+numeros[0]         // válido
+numeros["hola"]    // índice inválido
 ```
 
-### Módulos principales
+## Módulos principales
 
-``` text
+```text
 compiscript/
 ├── errors.py
 ├── semantic.py
@@ -413,128 +412,373 @@ compiscript/
     └── CompiscriptVisitor.py
 ```
 
-------------------------------------------------------------------------
+---
 
-# Interfaz gráfica
+# 🖥️ Compiler IDE
 
-El proyecto incluye una interfaz gráfica desarrollada con **Tkinter**,
-diseñada como un pequeño IDE con estilo oscuro tipo terminal industrial.
+Los tres proyectos pueden utilizarse desde una interfaz gráfica integrada desarrollada con **Tkinter**.
 
-Ejecutar con:
-
-``` bash
+```powershell
 python gui/app.py
 ```
 
-## Funciones de la GUI
+La aplicación utiliza una interfaz oscura inspirada en herramientas de desarrollo y permite trabajar con los componentes del compilador desde un mismo entorno.
 
-La interfaz integra YALex, YAPar y Compiscript en una sola aplicación.
+## YALex / YAPar
 
-### Editores
+La interfaz permite inspeccionar:
 
-Incluye pestañas para:
+* Tokens.
+* Reglas YALex.
+* Resultado del parser.
+* Tabla SLR(1).
+* Tabla LALR.
+* Tabla LL(1).
+* Autómata LR(0).
+* FIRST/FOLLOW.
+* Gramática YAPar.
 
--   YALex.
--   YAPar.
--   Entrada.
--   Compiscript.
+## Compiscript
 
-El editor de Compiscript incluye numeración de líneas, resaltado de
-sintaxis y posición actual del cursor.
+El editor de Compiscript incluye:
 
-### YALex / YAPar
+* Editor de archivos `.cps`.
+* Numeración de líneas.
+* Resaltado de sintaxis.
+* Posición de línea y columna.
+* Tokens producidos por ANTLR.
+* Árbol sintáctico gráfico.
+* Zoom y desplazamiento del árbol.
+* Errores léxicos.
+* Errores sintácticos.
+* Errores semánticos.
+* Navegación desde errores hacia el editor.
+* Tabla de símbolos organizada por scope.
+* Referencia del lenguaje.
+* Visualización de la gramática.
 
-La GUI permite visualizar:
+El análisis se ejecuta en un hilo separado para mantener responsiva la interfaz durante el procesamiento.
 
--   Tokens.
--   Reglas YALex.
--   Resultado del parser.
--   Tabla SLR(1).
--   Tabla LALR.
--   Tabla LL(1).
--   Autómata LR(0).
--   FIRST/FOLLOW.
--   Gramática YAPar.
+---
 
-### Compiscript
+# 🚀 Instalación
 
-La integración de Compiscript permite visualizar:
+## Requisitos
 
--   Tokens producidos por ANTLR.
--   Árbol sintáctico gráfico.
--   Errores léxicos.
--   Errores sintácticos.
--   Errores semánticos.
--   Tabla de símbolos organizada por scope.
--   Referencia del lenguaje.
--   Gramática de Compiscript.
+Se recomienda utilizar:
 
-El árbol sintáctico se muestra gráficamente dentro de la interfaz y
-permite navegar estructuras grandes mediante desplazamiento y zoom.
+* **Python 3.11**
+* **Java Runtime**
+* **Graphviz**
+* **Git**
+* **Tkinter**
 
-Los errores se presentan por fase, línea y columna. Desde los paneles de
-errores se puede navegar hacia la ubicación correspondiente en el
-editor.
+ANTLR 4.13.2 se encuentra incluido en `tools/antlr.jar`.
 
-------------------------------------------------------------------------
+---
 
-# Casos de prueba
+## 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/Emadlgg/compiler-toolkit.git
+cd compiler-toolkit
+```
+
+---
+
+## 2. Crear un entorno virtual
+
+### Windows
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Si se utiliza CMD:
+
+```cmd
+.venv\Scripts\activate.bat
+```
+
+### Linux / macOS
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+---
+
+## 3. Instalar las dependencias
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Las principales dependencias Python son:
+
+```text
+antlr4-python3-runtime==4.13.2
+graphviz==0.21
+```
+
+---
+
+## 4. Instalar Graphviz
+
+El paquete `graphviz` de Python funciona como interfaz hacia Graphviz. Para generar las visualizaciones también es necesario instalar **Graphviz en el sistema operativo**.
+
+### Windows
+
+Instalar Graphviz y asegurarse de que su carpeta `bin` se encuentre disponible en la variable de entorno `PATH`.
+
+Para comprobar la instalación:
+
+```powershell
+dot -V
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt install graphviz
+```
+
+### macOS
+
+```bash
+brew install graphviz
+```
+
+---
+
+## 5. Verificar ANTLR
+
+El proyecto incluye:
+
+```text
+tools/antlr.jar
+```
+
+correspondiente a **ANTLR 4.13.2**.
+
+Puede comprobarse mediante:
+
+```bash
+java -jar tools/antlr.jar
+```
+
+La salida debe comenzar con:
+
+```text
+ANTLR Parser Generator  Version 4.13.2
+```
+
+### Regeneración de Compiscript
+
+> [!IMPORTANT]
+> Los archivos generados ya se encuentran incluidos en el repositorio.
+> Este paso **no es necesario para ejecutar el proyecto**.
+
+Solo debe realizarse si se modifica:
+
+```text
+grammars/compiscript/Compiscript.g4
+```
+
+Desde la raíz:
+
+```powershell
+java -jar tools/antlr.jar -Dlanguage=Python3 -visitor -Xexact-output-dir -o compiscript\generated grammars\compiscript\Compiscript.g4
+```
+
+La opción `-Xexact-output-dir` hace que los archivos sean escritos directamente en `compiscript/generated/`.
+
+---
+
+# ⚡ Inicio rápido
+
+Una vez instaladas las dependencias, la forma más rápida de explorar el proyecto es ejecutar la interfaz gráfica:
+
+```powershell
+python gui/app.py
+```
+
+También pueden utilizarse individualmente los tres componentes:
+
+```powershell
+# Generador léxico
+python yalex.py --help
+
+# Generador sintáctico
+python yapar.py --help
+
+# Compiscript
+python compiscript.py --help
+```
+
+---
+
+# ⌨️ Uso desde CLI
+
+Todos los comandos deben ejecutarse desde la **raíz del repositorio**.
+
+## 🔤 YALex
+
+### Java
+
+Generar el lexer:
+
+```powershell
+python yalex.py grammars/java/java.yal -o java_lexer.py
+```
+
+Generar también las visualizaciones:
+
+```powershell
+python yalex.py grammars/java/java.yal -o java_lexer.py --all
+```
+
+Después puede ejecutarse el lexer generado:
+
+```powershell
+python java_lexer.py examples/java/input_java.txt --verbose
+```
+
+### SQL
+
+```powershell
+python yalex.py grammars/sql/sql.yal -o sql_lexer.py --all
+python sql_lexer.py examples/sql/query.sql --verbose
+```
+
+### Opciones de visualización
+
+```text
+--tree       Árboles de expresiones regulares
+--afd        Grafo del AFD
+--all        Todas las visualizaciones
+```
+
+---
+
+## 🌳 YAPar
+
+### Java — SLR(1)
+
+```powershell
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt
+```
+
+### Java — LALR
+
+```powershell
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --method lalr
+```
+
+### Java — LL(1)
+
+```powershell
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --method ll1
+```
+
+### Comparar los tres métodos
+
+```powershell
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --all
+```
+
+### SQL
+
+```powershell
+python yapar.py grammars/sql/sql_grammar.yapar -l grammars/sql/sql.yal -i examples/sql/query.sql --all
+```
+
+---
+
+## 🧠 Compiscript
+
+### Análisis estándar
+
+```powershell
+python compiscript.py archivo.cps
+```
+
+### Mostrar árbol sintáctico
+
+```powershell
+python compiscript.py archivo.cps --tree
+```
+
+### Mostrar tabla de símbolos
+
+```powershell
+python compiscript.py archivo.cps --symbols
+```
+
+### Mostrar toda la información
+
+```powershell
+python compiscript.py archivo.cps --all
+```
+
+Por ejemplo:
+
+```powershell
+python compiscript.py tests/compiscript/tipos/ok_tipos.cps --all
+```
+
+Una ejecución correcta produce, entre otros resultados:
+
+```text
+✓ Sin errores semánticos
+
+══ TABLA DE SÍMBOLOS ══
+
+┌─ global (global)
+│  function print(value:any) → void
+│  ...
+└─
+```
+
+---
+
+# 🧪 Casos de prueba
 
 ## Java
 
-Los archivos principales son:
-
-``` text
+```text
 grammars/java/java.yal
 grammars/java/java_grammar.yapar
 examples/java/input_java.txt
 ```
 
-La gramática utilizada contempla construcciones como clases, métodos,
-variables, expresiones, condicionales, ciclos, retornos, arreglos,
-llamadas y creación de objetos.
+La gramática utilizada contempla construcciones como clases, métodos, variables, expresiones, condicionales, ciclos, retornos, arreglos, llamadas y creación de objetos.
 
-En las pruebas realizadas, la gramática Java produce múltiples
-conflictos, especialmente en LL(1), debido a características como la
-recursión izquierda. Los analizadores LR manejan mejor este tipo de
-gramática.
+Java también sirve para observar las diferencias entre las estrategias de parsing, particularmente cuando una gramática presenta características que dificultan su utilización mediante LL(1).
+
+---
 
 ## SQL
 
-Archivos:
-
-``` text
+```text
 grammars/sql/sql.yal
 grammars/sql/sql_grammar.yapar
 examples/sql/query.sql
 ```
 
-El subset utilizado contempla construcciones como:
+El subset utilizado contempla instrucciones y elementos como:
 
--   `SELECT`
--   `FROM`
--   `WHERE`
--   `INSERT`
--   `INTO`
--   `VALUES`
--   `UPDATE`
--   `SET`
--   `DELETE`
--   `AND`
--   `OR`
--   `NOT`
--   `NULL`
--   Comparaciones.
--   Identificadores.
--   Strings.
--   Enteros.
--   Floats.
+`SELECT`, `FROM`, `WHERE`, `INSERT`, `INTO`, `VALUES`, `UPDATE`, `SET`, `DELETE`, `AND`, `OR`, `NOT`, `NULL`, identificadores, strings, enteros, floats y comparaciones.
+
+---
 
 ## Compiscript
 
-Los casos de prueba se encuentran organizados por categoría:
+Los casos de prueba funcionales están organizados por categoría:
 
-``` text
+```text
 tests/compiscript/
 ├── tipos/
 ├── ambitos/
@@ -544,49 +788,54 @@ tests/compiscript/
 └── extra/
 ```
 
-Las categorías principales contienen casos correctos y casos diseñados
-para producir errores.
+### Caso válido
 
-Los casos adicionales verifican características como:
+```powershell
+python compiscript.py tests/compiscript/tipos/ok_tipos.cps --all
+```
 
--   Constantes.
--   Código muerto.
--   Closures.
--   Atributos.
--   Métodos.
--   Constructores.
--   Listas.
--   Índices.
+### Caso con errores
 
-------------------------------------------------------------------------
+```powershell
+python compiscript.py tests/compiscript/tipos/error_tipos.cps --all
+```
 
-# Estructura del proyecto
+Los casos adicionales verifican:
 
-``` text
-proyecto/
+* Constantes.
+* Código muerto.
+* Closures.
+* Atributos.
+* Métodos.
+* Constructores.
+* Listas.
+* Índices.
+
+---
+
+# 📁 Estructura del repositorio
+
+```text
+compiler-toolkit/
 │
-├── automata/
-│   ├── __init__.py
+├── automata/                    # AFN, AFD, Thompson y subconjuntos
 │   ├── afd.py
 │   ├── afn.py
 │   ├── subset.py
 │   └── thompson.py
 │
-├── regex/
-│   ├── __init__.py
+├── regex/                       # Parser y representación de regex
 │   ├── regex_node.py
 │   └── regex_parser.py
 │
-├── yalex/
-│   ├── __init__.py
+├── yalex/                       # Generador léxico
 │   ├── generator.py
 │   ├── lexer_builder.py
 │   ├── visualizer.py
 │   ├── yalex_parser.py
 │   └── yalex_reader.py
 │
-├── yapar/
-│   ├── __init__.py
+├── yapar/                       # Generador sintáctico
 │   ├── first_follow.py
 │   ├── lalr_table.py
 │   ├── ll1_table.py
@@ -595,380 +844,119 @@ proyecto/
 │   ├── slr_table.py
 │   └── yapar_parser.py
 │
-├── compiscript/
-│   ├── __init__.py
+├── compiscript/                 # Analizador semántico
 │   ├── errors.py
 │   ├── semantic.py
 │   ├── symbol_table.py
-│   └── generated/
-│       ├── __init__.py
-│       ├── CompiscriptLexer.py
-│       ├── CompiscriptParser.py
-│       └── CompiscriptVisitor.py
+│   └── generated/               # Lexer/parser generados por ANTLR
 │
 ├── gui/
-│   ├── __init__.py
-│   └── app.py
+│   └── app.py                   # IDE gráfico
 │
 ├── grammars/
 │   ├── java/
-│   │   ├── java.yal
-│   │   └── java_grammar.yapar
 │   ├── sql/
-│   │   ├── sql.yal
-│   │   └── sql_grammar.yapar
 │   └── compiscript/
 │       └── Compiscript.g4
 │
 ├── examples/
-│   ├── java/
-│   │   ├── correcto.txt
-│   │   ├── errores.txt
-│   │   └── input_java.txt
-│   ├── sql/
-│   │   └── query.sql
-│   └── compiscript/
-│
 ├── tests/
 │   └── compiscript/
-│       ├── tipos/
-│       ├── ambitos/
-│       ├── funciones/
-│       ├── control_flujo/
-│       ├── clases/
-│       └── extra/
 │
 ├── tools/
-│   └── antlr.jar
+│   └── antlr.jar                # ANTLR 4.13.2
 │
-├── yalex.py
-├── yapar.py
-├── compiscript.py
+├── yalex.py                     # CLI YALex
+├── yapar.py                     # CLI YAPar
+├── compiscript.py               # CLI Compiscript
 ├── requirements.txt
-├── README.md
-└── .gitignore
+└── README.md
 ```
 
-------------------------------------------------------------------------
+---
 
-# Instalación
+# 🛠️ Tecnologías
 
-## Requisitos
+| Tecnología       | Uso                                  |
+| ---------------- | ------------------------------------ |
+| **Python 3.11**  | Implementación principal             |
+| **ANTLR 4.13.2** | Lexer y parser de Compiscript        |
+| **Graphviz**     | Visualización de autómatas y árboles |
+| **Tkinter**      | Interfaz gráfica                     |
+| **Java Runtime** | Ejecución del generador ANTLR        |
+| **Git / GitHub** | Control de versiones                 |
 
-Se recomienda utilizar:
+---
 
--   **Python 3.11**
--   **Java Runtime**
--   **Graphviz**
--   **ANTLR4**
--   **Tkinter**
--   **Git**
+# 📚 Conceptos implementados
 
-## 1. Clonar el repositorio
+El proyecto pone en práctica conceptos fundamentales de construcción de compiladores:
 
-``` bash
-git clone <URL-DEL-REPOSITORIO>
-cd proyecto
+```text
+Expresiones regulares
+        │
+        ▼
+Construcción de Thompson
+        │
+        ▼
+       AFN
+        │
+        ▼
+Construcción de subconjuntos
+        │
+        ▼
+       AFD
+
+FIRST / FOLLOW
+Closure / GOTO
+LR(0)
+SLR(1)
+LALR
+LL(1)
+
+Árboles sintácticos
+Visitors
+Scopes
+Tablas de símbolos
+Sistemas de tipos
+Análisis semántico
 ```
 
-> Reemplazar `<URL-DEL-REPOSITORIO>` con la URL final del repositorio.
-
-## 2. Crear un entorno virtual
-
-### Windows
-
-``` powershell
-python -m venv .venv
-.venv\Scripts\activate
-```
-
-### Linux / macOS
-
-``` bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-## 3. Instalar dependencias
-
-``` bash
-pip install -r requirements.txt
-```
-
-Para Compiscript se utiliza el runtime de ANTLR4 para Python 3.
-
-## 4. Graphviz
-
-Graphviz debe estar instalado en el sistema para generar las
-visualizaciones utilizadas por YALex.
-
-### Windows
-
-Instalar Graphviz y asegurarse de que su carpeta `bin` esté disponible
-en la variable de entorno `PATH`.
-
-### Ubuntu / Debian
-
-``` bash
-sudo apt install graphviz
-```
-
-### macOS
-
-``` bash
-brew install graphviz
-```
-
-## 5. Regenerar ANTLR (opcional)
-
-El proyecto ya incluye los archivos Python generados en
-`compiscript/generated/`. Solo es necesario regenerarlos si se modifica
-`Compiscript.g4`.
-
-Desde la raíz del proyecto:
-
-``` bash
-java -jar tools/antlr.jar -Dlanguage=Python3 grammars/compiscript/Compiscript.g4 -visitor -o compiscript/generated/
-```
-
-------------------------------------------------------------------------
-
-# Uso
-
-Todos los siguientes comandos deben ejecutarse desde la raíz del
-proyecto.
-
-## YALex
-
-Mostrar ayuda:
-
-``` bash
-python yalex.py --help
-```
-
-### Generar lexer para Java
-
-``` bash
-python yalex.py grammars/java/java.yal -o java_lexer.py
-```
-
-Generar también todas las visualizaciones:
-
-``` bash
-python yalex.py grammars/java/java.yal -o java_lexer.py --all
-```
-
-Opciones principales:
-
-``` text
---tree       Genera árboles de expresiones regulares
---afd        Genera el grafo del AFD
---all        Genera todas las visualizaciones
---verbose    Salida detallada al ejecutar con -run
-```
-
-### Generar lexer para SQL
-
-``` bash
-python yalex.py grammars/sql/sql.yal -o sql_lexer.py --all
-```
-
-Ejemplo de ejecución:
-
-``` bash
-python sql_lexer.py examples/sql/query.sql --verbose
-```
-
-------------------------------------------------------------------------
-
-## YAPar
-
-Mostrar ayuda:
-
-``` bash
-python yapar.py --help
-```
-
-### Java --- SLR(1)
-
-``` bash
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt
-```
-
-### Java --- LALR
-
-``` bash
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --method lalr
-```
-
-### Java --- LL(1)
-
-``` bash
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --method ll1
-```
-
-### Ejecutar los tres métodos
-
-``` bash
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --all
-```
-
-### SQL
-
-``` bash
-python yapar.py grammars/sql/sql_grammar.yapar -l grammars/sql/sql.yal -i examples/sql/query.sql --all
-```
-
-------------------------------------------------------------------------
-
-## Compiscript
-
-Mostrar ayuda:
-
-``` bash
-python compiscript.py --help
-```
-
-Análisis estándar:
-
-``` bash
-python compiscript.py archivo.cps
-```
-
-Mostrar árbol sintáctico:
-
-``` bash
-python compiscript.py archivo.cps --tree
-```
-
-Mostrar tabla de símbolos:
-
-``` bash
-python compiscript.py archivo.cps --symbols
-```
-
-Mostrar toda la información:
-
-``` bash
-python compiscript.py archivo.cps --all
-```
-
-Ejemplo utilizando las pruebas:
-
-``` bash
-python compiscript.py tests/compiscript/funciones/ok_funciones.cps --all
-```
-
-------------------------------------------------------------------------
-
-## GUI
-
-Ejecutar la interfaz completa:
-
-``` bash
-python gui/app.py
-```
-
-Desde la GUI se pueden seleccionar archivos YALex, YAPar, archivos de
-entrada y programas `.cps`, además de ejecutar los analizadores y
-consultar sus diferentes vistas.
-
-------------------------------------------------------------------------
-
-# Pruebas de Compiscript
-
-Ejemplo de programa válido:
-
-``` bash
-python compiscript.py tests/compiscript/tipos/ok_tipos.cps --all
-```
-
-Ejemplo diseñado para generar errores:
-
-``` bash
-python compiscript.py tests/compiscript/tipos/error_tipos.cps --all
-```
-
-Otros grupos disponibles:
-
-``` text
-tests/compiscript/ambitos/
-tests/compiscript/funciones/
-tests/compiscript/control_flujo/
-tests/compiscript/clases/
-tests/compiscript/extra/
-```
-
-------------------------------------------------------------------------
-
-# Tecnologías utilizadas
-
-  Tecnología         Uso
-  ------------------ -----------------------------------------------
-  **Python 3.11**    Implementación principal
-  **ANTLR4**         Lexer y parser de Compiscript
-  **Graphviz**       Visualización de autómatas y árboles de YALex
-  **Tkinter**        Interfaz gráfica
-  **Java Runtime**   Ejecución de ANTLR
-  **Git / GitHub**   Control de versiones
-
-------------------------------------------------------------------------
-
-# Video de demostración
-
-> **Pendiente de agregar.**
-
-Cuando el video final esté disponible, colocar aquí el enlace:
-
-``` text
-Video demo: <URL-DEL-VIDEO>
-```
-
-```{=html}
-<!--
-Ejemplo:
-
-[▶ Ver video de demostración](https://youtu.be/...)
--->
-```
-
-------------------------------------------------------------------------
-
-# Estado del proyecto
-
--   [x] Generador léxico YALex.
--   [x] Construcción AFN/AFD.
--   [x] Generación automática de lexers.
--   [x] Visualización de árboles y AFD.
--   [x] Generador sintáctico YAPar.
--   [x] SLR(1).
--   [x] LALR.
--   [x] LL(1).
--   [x] FIRST/FOLLOW.
--   [x] Autómata LR(0).
--   [x] Analizador de Compiscript con ANTLR4.
--   [x] Análisis semántico.
--   [x] Scopes y tabla de símbolos.
--   [x] Pruebas semánticas.
--   [x] Integración completa en GUI.
--   [x] Árbol sintáctico gráfico de Compiscript.
--   [x] Paneles de errores léxicos, sintácticos y semánticos.
--   [x] Visualización de tabla de símbolos.
--   [ ] Video de demostración.
-
-------------------------------------------------------------------------
-
-# Autor
-
-**Osman Emanuel de León García --- 23428**
-
-Estudiante de Ingeniería en Ciencias de la Computación\
+---
+
+# ✅ Estado del proyecto
+
+* [x] Generador léxico YALex
+* [x] Construcción AFN/AFD
+* [x] Construcción de Thompson
+* [x] Generación automática de lexers
+* [x] Visualización de árboles y AFD
+* [x] Generador sintáctico YAPar
+* [x] FIRST/FOLLOW
+* [x] Autómata LR(0)
+* [x] SLR(1)
+* [x] LALR
+* [x] LL(1)
+* [x] Analizador de Compiscript con ANTLR4
+* [x] Análisis semántico
+* [x] Scopes y tabla de símbolos
+* [x] Casos de prueba funcionales
+* [x] Integración de los tres proyectos en GUI
+* [x] Árbol sintáctico gráfico
+* [x] Visualización de errores por fase
+* [x] Tabla de símbolos gráfica
+
+---
+
+# 👨‍💻 Autor
+
+**Osman Emanuel de León García — 23428**
+
+Ingeniería en Ciencias de la Computación
 Universidad del Valle de Guatemala
 
-------------------------------------------------------------------------
+**Construcción de Compiladores — 2026**
 
-# Curso
+---
 
-**Construcción de Compiladores**\
-Universidad del Valle de Guatemala\
-2026
+> Este proyecto fue desarrollado con fines académicos como implementación práctica de las principales etapas del front-end de un compilador.
