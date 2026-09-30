@@ -560,7 +560,9 @@ class IDE(tk.Tk):
                 symbols.delete(*symbols.get_children())
                 symbols.insert('', 'end', text='Análisis semántico omitido', values=('INFO', '', '', '', 'Corrige primero los errores léxicos/sintácticos'))
 
-            self._show_cps_problems(lex_listener.errors, syn_listener.errors, semantic_errors)
+            # las advertencias se muestran junto a los errores pero no cuentan como error
+            shown_semantic = semantic_errors + (analyzer.warnings if analyzer else [])
+            self._show_cps_problems(lex_listener.errors, syn_listener.errors, shown_semantic)
             real_tokens = [t for t in token_stream.tokens if t.type != Token.EOF]
             total_errors = len(lex_listener.errors) + len(syn_listener.errors) + len(semantic_errors)
             self.stat_vars['states'].set('—')
@@ -979,7 +981,7 @@ class IDE(tk.Tk):
                 return getattr(sym, 'type', None) or sym.name
             return getattr(sym, 'type', None) or 'any'
 
-        def symbol_details(sym):
+        def base_details(sym):
             if sym.kind == 'function':
                 params = ', '.join((f'{n}:{t}' for n, t in getattr(sym, 'params', [])))
                 return f"({params}) -> {getattr(sym, 'return_type', None) or 'void'}"
@@ -989,6 +991,22 @@ class IDE(tk.Tk):
             if sym.kind == 'const' and getattr(sym, 'value', None) is not None:
                 return f'valor = {sym.value!r}'
             return ''
+
+        def symbol_details(sym):
+            # detalles propios del símbolo + su ubicación en memoria (offset, tamaño, etiqueta)
+            base = base_details(sym)
+            where = sym.layout() if hasattr(sym, 'layout') else ''
+            return f'{base}   ·   {where}' if base and where else (where or base)
+
+        def scope_details(scope):
+            count = f'{len(scope.symbols)} símbolo(s)'
+            if scope.kind == 'function':
+                return f'{count}   ·   nivel {scope.depth}, frame {scope.frame_size}B'
+            if scope.kind == 'class' and getattr(scope, 'class_symbol', None) is not None:
+                return f'{count}   ·   objeto {scope.class_symbol.size}B'
+            if scope.kind == 'global':
+                return f'{count}   ·   datos globales {table.global_size()}B'
+            return count
 
         kind_labels = {
             'function': 'FUNCIÓN', 'class': 'CLASE', 'const': 'CONST',
@@ -1000,7 +1018,7 @@ class IDE(tk.Tk):
             scope_kind = str(getattr(scope, 'kind', 'scope')).upper()
             scope_id = view.insert(
                 parent, 'end', text=f'▾  {scope.name}', open=True,
-                values=(f'SCOPE · {scope_kind}', '', scope.name, '', f'{len(scope.symbols)} símbolo(s)'),
+                values=(f'SCOPE · {scope_kind}', '', scope.name, '', scope_details(scope)),
                 tags=('scope',)
             )
             for sym in scope.symbols.values():

@@ -386,6 +386,37 @@ Compiscript incluye soporte para:
 * `this`.
 * Instanciación mediante `new`.
 * Resolución de miembros heredados.
+* Asignaciones a variables, elementos de lista (`a[i] = x`) y atributos (`obj.campo = x`), validando tipo y que el destino sea asignable.
+* `break` fuera de un bucle o `switch`, y `continue` fuera de un bucle.
+
+## Información para generación de código
+
+Cada símbolo guarda dónde vive en memoria. Se ve en `--symbols` y en la columna de detalles de la pestaña *Símbolos* de la GUI.
+
+| Campo | Significado |
+| ----- | ----------- |
+| `storage` | `global`, `local`, `param`, `field`, `function`, `method`, `class` o `builtin` |
+| `offset` | desplazamiento en bytes dentro de su área (datos globales, registro de activación u objeto) |
+| `size` | tamaño en bytes; todo valor ocupa una palabra de 4 bytes (las cadenas, listas y objetos se guardan por referencia) |
+| `label` | etiqueta de funciones y métodos (`suma`, `Perro_hablar`, `exterior_interior`) |
+| `depth` | nivel léxico del ámbito donde se declara (global = 0); sirve para seguir los enlaces de acceso |
+
+Registro de activación, de dirección baja a alta:
+
+```text
+fp+0    valor de retorno
+fp+4    dirección de retorno
+fp+8    enlace de control (fp del llamador)
+fp+12   enlace de acceso (fp del ámbito léxico que define la función)
+fp+16   parámetros (en un método, `this` es el primero)
+        variables locales
+```
+
+Los bloques hermanos reutilizan los mismos espacios dentro del registro, y el tamaño del registro (`frame`) es el máximo que llegan a ocupar. Los atributos de una clase parten del tamaño de su clase padre, así que los heredados conservan su offset.
+
+Después de analizar, el `SemanticAnalyzer` deja anotado el árbol para las fases siguientes: `node_types` (tipo de cada nodo), `node_scopes` (scope que abre cada bloque, función, clase o bucle) y `node_symbols` (símbolo al que se resuelve un identificador, declaración, llamada o acceso a miembro).
+
+> El parser se importa siempre como `compiscript.generated.*`. Importarlo también como módulo suelto crea dos copias de las clases y los `isinstance` sobre el árbol fallan sin avisar.
 
 ## Listas
 
@@ -397,7 +428,10 @@ El análisis contempla listas y acceso mediante índices.
 
 numeros[0]         // válido
 numeros["hola"]    // índice inválido
+numeros[0] = 5     // asignación a un elemento
 ```
+
+Los tipos de lista conservan el tipo de sus elementos: `integer[]` se representa como `array:integer` y `integer[][]` como `array:array:integer`. Un `foreach` sobre una lista toma ese tipo para su variable.
 
 ## Módulos principales
 

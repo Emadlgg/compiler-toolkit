@@ -5,6 +5,7 @@ Uso:
     python compiscript.py archivo.cps
     python compiscript.py archivo.cps --tree
     python compiscript.py archivo.cps --symbols
+    python compiscript.py archivo.cps --tac
     python compiscript.py archivo.cps --all
     python compiscript.py --help
 """
@@ -18,17 +19,18 @@ import sys
 # ============================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-GENERATED_DIR = os.path.join(BASE_DIR, "compiscript", "generated")
 
-if GENERATED_DIR not in sys.path:
-    sys.path.insert(0, GENERATED_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 
 from antlr4 import CommonTokenStream, InputStream
 from antlr4.error.ErrorListener import ErrorListener
 
-from CompiscriptLexer import CompiscriptLexer
-from CompiscriptParser import CompiscriptParser
+# El parser se importa por la ruta de paquete, igual que en semantic.py y en la
+# GUI. Mezclar rutas crea dos copias del módulo y rompe los isinstance().
+from compiscript.generated.CompiscriptLexer import CompiscriptLexer
+from compiscript.generated.CompiscriptParser import CompiscriptParser
 
 from compiscript.semantic import SemanticAnalyzer
 
@@ -43,14 +45,16 @@ Uso:
 
 Opciones:
   --tree       Mostrar árbol sintáctico
-  --symbols    Mostrar tabla de símbolos
-  --all        Mostrar árbol sintáctico y tabla de símbolos
+  --symbols    Mostrar tabla de símbolos (con direcciones, offsets y tamaños)
+  --tac        Generar y mostrar el código intermedio (TAC)
+  --all        Mostrar árbol sintáctico, tabla de símbolos y TAC
   -h, --help   Mostrar esta ayuda
 
 Ejemplos:
   python compiscript.py archivo.cps
   python compiscript.py archivo.cps --tree
   python compiscript.py archivo.cps --symbols
+  python compiscript.py archivo.cps --tac
   python compiscript.py archivo.cps --all
 
 Tests:
@@ -173,6 +177,33 @@ def analyze(tree):
 
 
 # ============================================================
+# CÓDIGO INTERMEDIO
+# ============================================================
+
+def generate_tac(tree, analyzer):
+    """
+    Corre el generador de código intermedio sobre un programa que ya pasó
+    el análisis semántico e imprime el TAC resultante.
+
+    El generador vive en compiscript/codegen.py y se importa aquí para que
+    el CLI siga funcionando mientras esa fase no esté disponible.
+    """
+
+    try:
+        from compiscript.codegen import CodeGenerator
+    except ImportError:
+        print("  El generador de código intermedio todavía no está implementado")
+        print("  (falta compiscript/codegen.py).")
+        return
+
+    generator = CodeGenerator(analyzer)
+    instructions = generator.generate(tree)
+
+    for instruction in instructions:
+        print(f"  {instruction}")
+
+
+# ============================================================
 # ÁRBOL SINTÁCTICO
 # ============================================================
 
@@ -256,6 +287,7 @@ def validate_arguments(args):
     valid_flags = {
         "--tree",
         "--symbols",
+        "--tac",
         "--all",
     }
 
@@ -314,6 +346,11 @@ def main():
 
     show_symbols = (
         "--symbols" in args
+        or "--all" in args
+    )
+
+    show_tac = (
+        "--tac" in args
         or "--all" in args
     )
 
@@ -415,6 +452,16 @@ def main():
     else:
         print("  ✓ Sin errores semánticos")
 
+    if analyzer.warnings:
+        print()
+        print(
+            f"ADVERTENCIAS "
+            f"({len(analyzer.warnings)}):"
+        )
+
+        for warning in analyzer.warnings:
+            print(f"  • {warning}")
+
     # ========================================================
     # TABLA DE SÍMBOLOS
     # ========================================================
@@ -432,6 +479,25 @@ def main():
         print(
             analyzer.table.full_report()
         )
+
+    # ========================================================
+    # CÓDIGO INTERMEDIO
+    # ========================================================
+
+    if show_tac:
+        print()
+
+        print(
+            "── CÓDIGO INTERMEDIO (TAC) "
+            "──────────────────────"
+        )
+
+        print()
+
+        if syntax_errors or analyzer.errors:
+            print("  No se genera código: corrige los errores primero.")
+        else:
+            generate_tac(tree, analyzer)
 
     # --------------------------------------------------------
     # Footer

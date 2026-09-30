@@ -1,24 +1,64 @@
-"""
+r"""
 semantic.py — Visitor semántico para Compiscript.
-Adaptado a la gramática grammars/compiscript/grammars\compiscript\Compiscript.g4 actual.
+Adaptado a la gramática grammars/compiscript/Compiscript.g4 actual.
+
+Además de validar el programa, el analizador deja anotado el árbol para que
+el generador de código intermedio no tenga que volver a inferir nada:
+
+  node_types[ctx]    tipo inferido de cada expresión/nodo visitado
+  node_scopes[ctx]   scope que abre cada bloque, función, clase o bucle
+  node_symbols[ctx]  símbolo al que se resuelve un nodo (identificador,
+                     declaración, llamada, acceso a miembro, new)
+  warnings           avisos que no impiden generar código
 """
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'generated'))
 from antlr4 import *
-from CompiscriptVisitor import CompiscriptVisitor
-from CompiscriptParser import CompiscriptParser
+# Importante: el parser se importa siempre por la ruta de paquete. Si se cargara
+# también como módulo suelto ('CompiscriptParser'), Python lo trataría como otro
+# módulo y los isinstance() contra sus contextos fallarían en silencio.
+from compiscript.generated.CompiscriptVisitor import CompiscriptVisitor
+from compiscript.generated.CompiscriptParser import CompiscriptParser
 from compiscript.symbol_table import SymbolTable, Symbol, Type
 from compiscript.errors import SemanticError, UndeclaredVariableError, RedeclarationError, TypeMismatchError, InvalidOperationError, ReturnOutsideFunctionError, BreakOutsideLoopError, ContinueOutsideLoopError, NotCallableError, ArgumentCountError, ReturnTypeMismatchError, UndeclaredClassError, AttributeNotFoundError, ThisOutsideClassError, ConstNotInitializedError, NonBooleanConditionError, DeadCodeError
+
+# Si es False, el código muerto se reporta como advertencia y no bloquea la
+# generación de código. Por defecto es error, como en las pruebas existentes.
+DEAD_CODE_IS_ERROR = True
+
 
 class SemanticAnalyzer(CompiscriptVisitor):
 
     def __init__(self):
         self.table = SymbolTable()
         self.errors = []
+        self.warnings = []
+        self.node_types = {}
+        self.node_scopes = {}
+        self.node_symbols = {}
+
+    def visit(self, tree):
+        """Visita un nodo y guarda su tipo para el generador de código."""
+        result = tree.accept(self)
+        if isinstance(result, str) and not result.startswith('__'):
+            self.node_types[tree] = result
+        return result
 
     def error(self, err):
         self.errors.append(err)
+
+    def _report_dead_code(self, stmt):
+        severity = 'error' if DEAD_CODE_IS_ERROR else 'warning'
+        err = DeadCodeError(self._line(stmt), self._col(stmt), severity)
+        (self.errors if DEAD_CODE_IS_ERROR else self.warnings).append(err)
+
+    def _check_call(self, name, params, args, line, col):
+        """Valida cantidad y tipos de los argumentos de una llamada."""
+        expected, got = len(params), len(args)
+        if expected != got:
+            self.error(ArgumentCountError(name, expected, got, line, col))
+            return
+        for (_, p_type), arg_type in zip(params, args):
+            if not Type.is_compatible(p_type, arg_type):
+                self.error(TypeMismatchError(p_type, arg_type, line, col))
 
     def _line(self, ctx):
         try:
@@ -56,7 +96,7 @@ class SemanticAnalyzer(CompiscriptVisitor):
             if init_type not in (Type.ANY, Type.UNKNOWN):
                 if not Type.is_compatible(declared_type, init_type):
                     self.error(TypeMismatchError(declared_type, init_type, line, col))
-        self.table.define_variable(name, final_type, line=line)
+        self.node_symbols[ctx] = self.table.define_variable(name, final_type, line=line)
         return final_type
 
     def visitConstantDeclaration(self, ctx):
@@ -78,11 +118,32 @@ class SemanticAnalyzer(CompiscriptVisitor):
             if init_type not in (Type.ANY, Type.UNKNOWN):
                 if not Type.is_compatible(declared_type, init_type):
                     self.error(TypeMismatchError(declared_type, init_type, line, col))
-        self.table.define_const(name, final_type, line=line)
+        self.node_symbols[ctx] = self.table.define_const(name, final_type, line=line)
         return final_type
 
     def visitInitializer(self, ctx):
         return self.visit(ctx.expression())
+
+    def _check_property_assign(self, obj_type, member_name, value_type, line, col, node=None):
+        """Valida `obj.miembro = valor` y retorna el tipo del miembro."""
+        if obj_type in (Type.ANY, Type.UNKNOWN):
+            return value_type
+        if obj_type in (Type.INTEGER, Type.STRING, Type.BOOLEAN, Type.NULL, Type.VOID) or Type.is_array(obj_type):
+            self.error(AttributeNotFoundError(str(obj_type), member_name, line, col))
+            return Type.UNKNOWN
+        member = self._lookup_class_member(obj_type, member_name)
+        if not member:
+            self.error(AttributeNotFoundError(obj_type, member_name, line, col))
+            return Type.UNKNOWN
+        if node is not None:
+            self.node_symbols[node] = member
+        if member.kind == 'const':
+            self.error(SemanticError(f"No se puede reasignar la constante '{member_name}'", line, col))
+        elif member.kind == 'function':
+            self.error(SemanticError(f"No se puede asignar al método '{member_name}'", line, col))
+        elif value_type != Type.UNKNOWN and not Type.is_compatible(member.type, value_type):
+            self.error(TypeMismatchError(member.type, value_type, line, col))
+        return member.type
 
     def visitAssignment(self, ctx):
         """
@@ -96,7 +157,9 @@ class SemanticAnalyzer(CompiscriptVisitor):
             sym = self.table.lookup(name)
             if not sym:
                 self.error(UndeclaredVariableError(name, line, col))
+                self.visit(ctx.expression(0))
                 return Type.UNKNOWN
+            self.node_symbols[ctx] = sym
             value_type = self.visit(ctx.expression(0))
             if sym.kind == 'const':
                 self.error(SemanticError(f"No se puede reasignar la constante '{name}'", line, col))
@@ -105,11 +168,11 @@ class SemanticAnalyzer(CompiscriptVisitor):
                 if not Type.is_compatible(sym.type, value_type):
                     self.error(TypeMismatchError(sym.type, value_type, line, col))
             return sym.type
+        # asignación a propiedad: obj.miembro = valor
         expressions = ctx.expression()
-        if expressions:
-            for expr in expressions:
-                self.visit(expr)
-        return Type.ANY
+        obj_type = self.visit(expressions[0])
+        value_type = self.visit(expressions[1])
+        return self._check_property_assign(obj_type, ctx.Identifier().getText(), value_type, line, col, ctx)
 
     def visitFunctionDeclaration(self, ctx):
         """
@@ -123,6 +186,7 @@ class SemanticAnalyzer(CompiscriptVisitor):
             self.error(RedeclarationError(name, line, col))
             return Type.UNKNOWN
         params = []
+        param_ctxs = []
         param_names = set()
         if ctx.parameters():
             for param in ctx.parameters().parameter():
@@ -134,16 +198,23 @@ class SemanticAnalyzer(CompiscriptVisitor):
                     self.error(RedeclarationError(p_name, self._line(param), self._col(param)))
                 param_names.add(p_name)
                 params.append((p_name, p_type))
+                param_ctxs.append(param)
         return_type = Type.VOID
         if ctx.type_():
             return_type = self._resolve_type(ctx.type_())
+        # un método recibe `this` como primer parámetro implícito
+        method_of = self.table.get_current_class() if self.table.current_scope.kind == 'class' else None
         sym = self.table.define_function(name, params, return_type, line=line)
+        self.node_symbols[ctx] = sym
         scope = self.table.enter_scope(f'function:{name}', kind='function')
+        self.node_scopes[ctx] = scope
         scope.function_symbol = sym
         scope.expected_return = return_type
         scope.found_return = False
-        for p_name, p_type in params:
-            self.table.define_variable(p_name, p_type)
+        if method_of:
+            self.table.define_param('this', method_of, line=line)
+        for param, (p_name, p_type) in zip(param_ctxs, params):
+            self.node_symbols[param] = self.table.define_param(p_name, p_type, line=self._line(param))
         self.visit(ctx.block())
         self.table.exit_scope()
         return return_type
@@ -190,6 +261,8 @@ class SemanticAnalyzer(CompiscriptVisitor):
             self.error(RedeclarationError(name, line, col))
             return Type.UNKNOWN
         sym = self.table.define_class(name, line=line)
+        self.node_symbols[ctx] = sym
+        inherited_size = 0
         if len(identifiers) > 1:
             parent_name = identifiers[1].getText()
             parent_sym = self.table.lookup(parent_name)
@@ -197,7 +270,11 @@ class SemanticAnalyzer(CompiscriptVisitor):
                 self.error(UndeclaredClassError(parent_name, line, col))
             else:
                 sym.parent_class = parent_name
-        self.table.enter_scope(f'class:{name}', kind='class')
+                inherited_size = parent_sym.size   # los atributos heredados van primero
+        scope = self.table.enter_scope(f'class:{name}', kind='class')
+        self.node_scopes[ctx] = scope
+        scope.class_symbol = sym
+        scope.next_offset = inherited_size
         for member in ctx.classMember():
             self.visit(member)
         self.table.exit_scope()
@@ -210,11 +287,11 @@ class SemanticAnalyzer(CompiscriptVisitor):
         """
         block: '{' statement* '}';
         """
-        self.table.enter_scope('block', kind='block')
+        self.node_scopes[ctx] = self.table.enter_scope('block', kind='block')
         dead_code = False
         for stmt in ctx.statement():
             if dead_code:
-                self.error(DeadCodeError(self._line(stmt), self._col(stmt)))
+                self._report_dead_code(stmt)
                 break
             result = self.visit(stmt)
             if result in ('__return__', '__break__', '__continue__'):
@@ -259,7 +336,7 @@ class SemanticAnalyzer(CompiscriptVisitor):
 
     def visitBreakStatement(self, ctx):
         line, col = (self._line(ctx), self._col(ctx))
-        if not self.table.is_in_loop():
+        if not self.table.is_in_breakable():
             self.error(BreakOutsideLoopError(line, col))
         return '__break__'
 
@@ -282,13 +359,13 @@ class SemanticAnalyzer(CompiscriptVisitor):
         cond_type = self.visit(ctx.expression())
         if cond_type not in (Type.BOOLEAN, Type.ANY, Type.UNKNOWN):
             self.error(NonBooleanConditionError('while', cond_type, line, col))
-        self.table.enter_scope('while', kind='loop')
+        self.node_scopes[ctx] = self.table.enter_scope('while', kind='loop')
         self.visit(ctx.block())
         self.table.exit_scope()
 
     def visitDoWhileStatement(self, ctx):
         line, col = (self._line(ctx), self._col(ctx))
-        self.table.enter_scope('do-while', kind='loop')
+        self.node_scopes[ctx] = self.table.enter_scope('do-while', kind='loop')
         self.visit(ctx.block())
         self.table.exit_scope()
         cond_type = self.visit(ctx.expression())
@@ -305,7 +382,7 @@ class SemanticAnalyzer(CompiscriptVisitor):
           ')'
           block;
         """
-        self.table.enter_scope('for', kind='loop')
+        self.node_scopes[ctx] = self.table.enter_scope('for', kind='loop')
         if ctx.variableDeclaration():
             self.visit(ctx.variableDeclaration())
         elif ctx.assignment():
@@ -321,10 +398,16 @@ class SemanticAnalyzer(CompiscriptVisitor):
         self.table.exit_scope()
 
     def visitForeachStatement(self, ctx):
-        self.table.enter_scope('foreach', kind='loop')
+        # la colección se evalúa en el scope de afuera; la variable es del bucle
+        iter_type = self.visit(ctx.expression())
+        element_type = Type.ANY
+        if Type.is_array(iter_type):
+            element_type = Type.element_type(iter_type)
+        elif iter_type not in (Type.ANY, Type.UNKNOWN):
+            self.error(TypeMismatchError('array', iter_type, self._line(ctx), self._col(ctx)))
+        self.node_scopes[ctx] = self.table.enter_scope('foreach', kind='loop')
         var_name = ctx.Identifier().getText()
-        self.table.define_variable(var_name, Type.ANY)
-        self.visit(ctx.expression())
+        self.node_symbols[ctx] = self.table.define_variable(var_name, element_type, line=self._line(ctx))
         self.visit(ctx.block())
         self.table.exit_scope()
 
@@ -340,59 +423,93 @@ class SemanticAnalyzer(CompiscriptVisitor):
 
     def visitSwitchStatement(self, ctx):
         self.visit(ctx.expression())
-        self.table.enter_scope('switch', kind='loop')
+        # 'switch' acepta break pero no continue (a menos que haya un bucle afuera)
+        self.node_scopes[ctx] = self.table.enter_scope('switch', kind='switch')
         for case in ctx.switchCase():
             self.visit(case)
         if ctx.defaultCase():
             self.visit(ctx.defaultCase())
         self.table.exit_scope()
 
-    def visitSwitchCase(self, ctx):
-        self.visit(ctx.expression())
+    def _visit_case_body(self, statements):
         dead_code = False
-        for stmt in ctx.statement():
+        for stmt in statements:
             if dead_code:
-                self.error(DeadCodeError(self._line(stmt), self._col(stmt)))
+                self._report_dead_code(stmt)
                 break
             result = self.visit(stmt)
             if result in ('__return__', '__break__', '__continue__'):
                 dead_code = True
+
+    def visitSwitchCase(self, ctx):
+        self.visit(ctx.expression())
+        self._visit_case_body(ctx.statement())
         return None
 
     def visitDefaultCase(self, ctx):
-        dead_code = False
-        for stmt in ctx.statement():
-            if dead_code:
-                self.error(DeadCodeError(self._line(stmt), self._col(stmt)))
-                break
-            result = self.visit(stmt)
-            if result in ('__return__', '__break__', '__continue__'):
-                dead_code = True
+        self._visit_case_body(ctx.statement())
         return None
 
     def visitExpression(self, ctx):
         return self.visit(ctx.assignmentExpr())
 
+    def _lvalue_kind(self, lhs_ctx):
+        """Clasifica el lado izquierdo de una asignación: 'var' | 'index' | 'property' | None."""
+        suffixes = lhs_ctx.suffixOp()
+        if not suffixes:
+            if isinstance(lhs_ctx.primaryAtom(), CompiscriptParser.IdentifierExprContext):
+                return 'var'
+            return None
+        last = suffixes[-1]
+        if isinstance(last, CompiscriptParser.IndexExprContext):
+            return 'index'
+        if isinstance(last, CompiscriptParser.PropertyAccessExprContext):
+            return 'property'
+        return None
+
     def visitAssignExpr(self, ctx):
+        """
+        lhs '=' assignmentExpr, donde lhs puede ser una variable (x),
+        un elemento de lista (a[i]) o un atributo (obj.campo).
+        """
         line, col = (self._line(ctx), self._col(ctx))
-        lhs_text = ctx.lhs.getText()
-        sym = self.table.lookup(lhs_text)
-        if not sym:
-            self.error(UndeclaredVariableError(lhs_text, line, col))
-            self.visit(ctx.assignmentExpr())
-            return Type.UNKNOWN
+        lhs = ctx.lhs
+        kind = self._lvalue_kind(lhs)
+        target_type = self.visit(lhs)
         value_type = self.visit(ctx.assignmentExpr())
-        if sym.kind == 'const':
-            self.error(SemanticError(f"No se puede reasignar la constante '{lhs_text}'", line, col))
-        if value_type != Type.UNKNOWN:
-            if not Type.is_compatible(sym.type, value_type):
-                self.error(TypeMismatchError(sym.type, value_type, line, col))
-        return sym.type
+
+        if kind is None:
+            self.error(SemanticError("El lado izquierdo de la asignación no es asignable", line, col))
+            return Type.UNKNOWN
+        if target_type == Type.UNKNOWN:
+            return Type.UNKNOWN
+
+        if kind == 'var':
+            name = lhs.primaryAtom().getText()
+            sym = self.node_symbols.get(lhs.primaryAtom())
+            if sym is not None and sym.kind == 'const':
+                self.error(SemanticError(f"No se puede reasignar la constante '{name}'", line, col))
+            elif sym is not None and sym.kind in ('function', 'class'):
+                self.error(SemanticError(f"'{name}' no es una variable asignable", line, col))
+                return Type.UNKNOWN
+        elif kind == 'property':
+            member = self.node_symbols.get(lhs.suffixOp()[-1])
+            member_name = lhs.suffixOp()[-1].Identifier().getText()
+            if member is not None and member.kind == 'const':
+                self.error(SemanticError(f"No se puede reasignar la constante '{member_name}'", line, col))
+            elif member is not None and member.kind == 'function':
+                self.error(SemanticError(f"No se puede asignar al método '{member_name}'", line, col))
+                return Type.UNKNOWN
+
+        if value_type != Type.UNKNOWN and not Type.is_compatible(target_type, value_type):
+            self.error(TypeMismatchError(target_type, value_type, line, col))
+        return target_type
 
     def visitPropertyAssignExpr(self, ctx):
-        self.visit(ctx.lhs)
+        line, col = (self._line(ctx), self._col(ctx))
+        obj_type = self.visit(ctx.lhs)
         value_type = self.visit(ctx.assignmentExpr())
-        return value_type
+        return self._check_property_assign(obj_type, ctx.Identifier().getText(), value_type, line, col, ctx)
 
     def visitExprNoAssign(self, ctx):
         return self.visit(ctx.conditionalExpr())
@@ -555,28 +672,37 @@ class SemanticAnalyzer(CompiscriptVisitor):
         return Type.ANY
 
     def visitLeftHandSide(self, ctx):
+        """
+        leftHandSide: primaryAtom (suffixOp)*
+        Resuelve la cadena de sufijos (.miembro, (args), [indice]) de izquierda
+        a derecha y anota el tipo resultante de cada sufijo.
+        """
         current_type = self.visit(ctx.primaryAtom())
-        pending_member = None
-        for suffix in ctx.suffixOp():
+        pending_member = None   # miembro al que se aplicará la siguiente llamada
+        for position, suffix in enumerate(ctx.suffixOp()):
+            line, col = (self._line(suffix), self._col(suffix))
+
             if isinstance(suffix, CompiscriptParser.PropertyAccessExprContext):
                 member_name = suffix.Identifier().getText()
                 if current_type in (Type.ANY, Type.UNKNOWN, Type.INTEGER, Type.STRING, Type.BOOLEAN, Type.NULL, Type.VOID):
                     if current_type not in (Type.ANY, Type.UNKNOWN):
-                        self.error(AttributeNotFoundError(str(current_type), member_name, self._line(suffix), self._col(suffix)))
+                        self.error(AttributeNotFoundError(str(current_type), member_name, line, col))
                     current_type = Type.ANY
                     pending_member = None
-                    continue
-                member = self._lookup_class_member(current_type, member_name)
-                if not member:
-                    self.error(AttributeNotFoundError(current_type, member_name, self._line(suffix), self._col(suffix)))
-                    current_type = Type.UNKNOWN
-                    pending_member = '__invalid_member__'
-                    continue
-                pending_member = member
-                if member.kind == 'function':
-                    current_type = member.return_type or Type.ANY
                 else:
-                    current_type = member.type
+                    member = self._lookup_class_member(current_type, member_name)
+                    if not member:
+                        self.error(AttributeNotFoundError(current_type, member_name, line, col))
+                        current_type = Type.UNKNOWN
+                        pending_member = '__invalid_member__'
+                    else:
+                        self.node_symbols[suffix] = member
+                        pending_member = member
+                        if member.kind == 'function':
+                            current_type = member.return_type or Type.ANY
+                        else:
+                            current_type = member.type
+
             elif isinstance(suffix, CompiscriptParser.CallExprContext):
                 args = []
                 if suffix.arguments():
@@ -584,34 +710,48 @@ class SemanticAnalyzer(CompiscriptVisitor):
                         args.append(self.visit(expr))
                 if pending_member == '__invalid_member__':
                     current_type = Type.UNKNOWN
-                    pending_member = None
-                    continue
-                if pending_member is not None:
+                elif pending_member is not None:
+                    # llamada a un método: obj.metodo(...)
                     if pending_member.kind != 'function':
-                        self.error(NotCallableError(pending_member.name, self._line(suffix), self._col(suffix)))
+                        self.error(NotCallableError(pending_member.name, line, col))
                         current_type = Type.UNKNOWN
                     else:
-                        expected = len(pending_member.params)
-                        got = len(args)
-                        if expected != got:
-                            self.error(ArgumentCountError(pending_member.name, expected, got, self._line(suffix), self._col(suffix)))
-                        else:
-                            for (_, p_type), arg_type in zip(pending_member.params, args):
-                                if not Type.is_compatible(p_type, arg_type):
-                                    self.error(TypeMismatchError(p_type, arg_type, self._line(suffix), self._col(suffix)))
+                        self._check_call(pending_member.name, pending_member.params, args, line, col)
                         current_type = pending_member.return_type or Type.ANY
-                    pending_member = None
+                elif position == 0:
+                    # llamada directa a una función: f(...)
+                    name = ctx.primaryAtom().getText()
+                    if '(' in name:
+                        name = name.split('(')[0]
+                    sym = self.table.lookup(name)
+                    if not sym:
+                        current_type = Type.ANY
+                    elif sym.kind != 'function':
+                        self.error(NotCallableError(name, line, col))
+                        current_type = Type.UNKNOWN
+                    else:
+                        self._check_call(name, sym.params, args, line, col)
+                        self.node_symbols[suffix] = sym
+                        current_type = sym.return_type or Type.ANY
                 else:
-                    current_type = self._handle_call_suffix(ctx, suffix, current_type, precomputed_args=args)
+                    # llamar el resultado de otra expresión (por ejemplo a[0](x)): no se conoce
+                    current_type = Type.ANY
+                pending_member = None
+
             elif isinstance(suffix, CompiscriptParser.IndexExprContext):
                 index_type = self.visit(suffix.expression())
                 if index_type not in (Type.INTEGER, Type.ANY, Type.UNKNOWN):
-                    self.error(TypeMismatchError(Type.INTEGER, index_type, self._line(suffix), self._col(suffix)))
-                if isinstance(current_type, str) and current_type.startswith('array:'):
-                    current_type = current_type.split(':', 1)[1]
+                    self.error(TypeMismatchError(Type.INTEGER, index_type, line, col))
+                if Type.is_array(current_type):
+                    current_type = Type.element_type(current_type)
+                elif current_type in (Type.INTEGER, Type.BOOLEAN, Type.NULL, Type.VOID):
+                    self.error(InvalidOperationError('[]', current_type, line=line, col=col))
+                    current_type = Type.UNKNOWN
                 else:
                     current_type = Type.ANY
                 pending_member = None
+
+            self.node_types[suffix] = current_type
         return current_type
 
     def visitIdentifierExpr(self, ctx):
@@ -621,6 +761,7 @@ class SemanticAnalyzer(CompiscriptVisitor):
         if not sym:
             self.error(UndeclaredVariableError(name, line, col))
             return Type.UNKNOWN
+        self.node_symbols[ctx] = sym
         if sym.kind == 'function':
             return sym.return_type or Type.ANY
         if sym.kind == 'class':
@@ -637,20 +778,14 @@ class SemanticAnalyzer(CompiscriptVisitor):
                 for expr in ctx.arguments().expression():
                     self.visit(expr)
             return Type.UNKNOWN
+        self.node_symbols[ctx] = class_sym
         args = []
         if ctx.arguments():
             for expr in ctx.arguments().expression():
                 args.append(self.visit(expr))
         constructor = self._lookup_class_member(class_name, 'constructor')
         if constructor and constructor.kind == 'function':
-            expected = len(constructor.params)
-            got = len(args)
-            if expected != got:
-                self.error(ArgumentCountError(f'{class_name}.constructor', expected, got, line, col))
-            else:
-                for (_, param_type), arg_type in zip(constructor.params, args):
-                    if not Type.is_compatible(param_type, arg_type):
-                        self.error(TypeMismatchError(param_type, arg_type, line, col))
+            self._check_call(f'{class_name}.constructor', constructor.params, args, line, col)
         elif args:
             self.error(ArgumentCountError(f'{class_name}.constructor', 0, len(args), line, col))
         return class_name
@@ -662,54 +797,6 @@ class SemanticAnalyzer(CompiscriptVisitor):
             return Type.UNKNOWN
         current_class = self.table.get_current_class()
         return current_class or Type.ANY
-
-    def visitCallExpr(self, ctx):
-        """
-        Este visitor normalmente es procesado desde
-        visitLeftHandSide porque necesitamos conocer
-        qué expresión se está llamando.
-        """
-        if ctx.arguments():
-            for expr in ctx.arguments().expression():
-                self.visit(expr)
-        return Type.ANY
-
-    def visitIndexExpr(self, ctx):
-        index_type = self.visit(ctx.expression())
-        if index_type not in (Type.INTEGER, Type.ANY, Type.UNKNOWN):
-            self.error(TypeMismatchError(Type.INTEGER, index_type, self._line(ctx), self._col(ctx)))
-        return Type.ANY
-
-    def visitPropertyAccessExpr(self, ctx):
-        return Type.ANY
-
-    def _handle_call_suffix(self, lhs_ctx, call_ctx, current_type, precomputed_args=None):
-        line, col = (self._line(call_ctx), self._col(call_ctx))
-        primary = lhs_ctx.primaryAtom()
-        name = primary.getText()
-        if '(' in name:
-            name = name.split('(')[0]
-        sym = self.table.lookup(name)
-        args = []
-        if precomputed_args is not None:
-            args = precomputed_args
-        elif call_ctx.arguments():
-            for expr in call_ctx.arguments().expression():
-                args.append(self.visit(expr))
-        if not sym:
-            return Type.ANY
-        if sym.kind != 'function':
-            self.error(NotCallableError(name, line, col))
-            return Type.UNKNOWN
-        expected = len(sym.params)
-        got = len(args)
-        if expected != got:
-            self.error(ArgumentCountError(name, expected, got, line, col))
-        else:
-            for (p_name, p_type), arg_type in zip(sym.params, args):
-                if not Type.is_compatible(p_type, arg_type):
-                    self.error(TypeMismatchError(p_type, arg_type, line, col))
-        return sym.return_type or Type.ANY
 
     def visitArguments(self, ctx):
         result = []
@@ -743,12 +830,18 @@ class SemanticAnalyzer(CompiscriptVisitor):
         """
         Convierte type/typeAnnotation/baseType
         al sistema Type de Compiscript.
+        integer[] -> array:integer, integer[][] -> array:array:integer
         """
         text = type_ctx.getText().replace(':', '').strip()
         mapping = {'integer': Type.INTEGER, 'string': Type.STRING, 'boolean': Type.BOOLEAN, 'void': Type.VOID, 'null': Type.NULL}
-        if text.endswith('[]'):
-            return Type.ANY
-        return mapping.get(text, text)
+        dims = 0
+        while text.endswith('[]'):
+            text = text[:-2]
+            dims += 1
+        resolved = mapping.get(text, text)
+        for _ in range(dims):
+            resolved = Type.array_of(resolved)
+        return resolved
 
     def visitChildren(self, ctx):
         result = None

@@ -4,15 +4,20 @@ errors.py — Clases de error semántico para Compiscript.
 
 
 class SemanticError:
-    def __init__(self, message, line=None, column=None):
-        self.message = message
-        self.line    = line
-        self.column  = column
+    def __init__(self, message, line=None, column=None, severity="error"):
+        self.message  = message
+        self.line     = line
+        self.column   = column
+        self.severity = severity     # "error" | "warning"
+
+    @property
+    def label(self):
+        return "Error semántico" if self.severity == "error" else "Advertencia"
 
     def __str__(self):
         if self.line:
-            return f"[Línea {self.line}:{self.column}] Error semántico: {self.message}"
-        return f"Error semántico: {self.message}"
+            return f"[Línea {self.line}:{self.column}] {self.label}: {self.message}"
+        return f"{self.label}: {self.message}"
 
 
 class UndeclaredVariableError(SemanticError):
@@ -79,5 +84,6 @@ class NonBooleanConditionError(SemanticError):
         super().__init__(f"La condición de '{stmt}' debe ser boolean, se obtuvo '{got}'", line, col)
 
 class DeadCodeError(SemanticError):
-    def __init__(self, line=None, col=None):
-        super().__init__("Código muerto: instrucciones después de return/break/continue", line, col)
+    def __init__(self, line=None, col=None, severity="error"):
+        super().__init__("Código muerto: instrucciones después de return/break/continue", line, col, severity)
+
