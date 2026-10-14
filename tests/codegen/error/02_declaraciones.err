@@ -1,0 +1,3 @@
+# redeclaración y variable inexistente
+'a' ya está declarado en este ámbito
+Variable 'desconocida' no declarada

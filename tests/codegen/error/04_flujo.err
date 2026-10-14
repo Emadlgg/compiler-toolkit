@@ -1,0 +1,5 @@
+# break, continue y return mal ubicados (continue no vale dentro de un switch suelto)
+[Línea 1:0] Error semántico: 'break' fuera de un bucle
+[Línea 2:0] Error semántico: 'continue' fuera de un bucle
+'return' fuera de una función
+[Línea 4:21] Error semántico: 'continue' fuera de un bucle

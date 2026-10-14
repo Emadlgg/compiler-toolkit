@@ -1,0 +1,4 @@
+# tipos incompatibles en inicializaciones
+Tipo incompatible: se esperaba 'integer', se obtuvo 'string'
+Tipo incompatible: se esperaba 'string', se obtuvo 'integer'
+Tipo incompatible: se esperaba 'boolean', se obtuvo 'integer'

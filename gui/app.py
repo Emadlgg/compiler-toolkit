@@ -5,7 +5,7 @@ Layout: sidebar + editor central + panel de output inferior
 """
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
-import sys, os, threading, importlib.util, re
+import sys, os, threading, importlib.util, re, subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from yapar.yapar_parser import YAParParser
 from yapar.first_follow import compute_first, compute_follow
@@ -22,6 +22,7 @@ from antlr4.error.ErrorListener import ErrorListener
 from compiscript.generated.CompiscriptLexer import CompiscriptLexer
 from compiscript.generated.CompiscriptParser import CompiscriptParser
 from compiscript.semantic import SemanticAnalyzer
+from compiscript.codegen import CodeGenerator
 
 
 class CPSAnalysisErrorListener(ErrorListener):
@@ -106,6 +107,7 @@ class IDE(tk.Tk):
         self._action_btn(sb, '▶   RUN', self._run, C['green'], primary=True)
         self._action_btn(sb, '⚡  RUN ALL', self._run_all, C['amber'])
         self._action_btn(sb, '◆   COMPILE CPS', self._run_compiscript, C['purple'])
+        self._action_btn(sb, '✔   TEST CPS', self._run_cps_tests, C['green'])
         self._action_btn(sb, '▣   SAVE', self._save, C['blue'])
         self._divider(sb)
         self._sb_section(sb, 'SESSION')
@@ -173,6 +175,8 @@ class IDE(tk.Tk):
         main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         top = tk.Frame(main, bg=C['bg'])
         top.pack(fill=tk.BOTH, expand=True)
+        # el editor ocupa lo que sobra; si exigiera su altura natural, el panel de abajo no podría agrandarse
+        top.pack_propagate(False)
         self._output_panel(main)
         self._editor_area(top)
 
@@ -309,19 +313,46 @@ class IDE(tk.Tk):
             elif name == 'YAPar':
                 self._populate_yapar_grammar()
 
+    OUT_PANEL_DEFAULT = 320     # alto inicial de la parte de abajo (px)
+    OUT_PANEL_MIN = 140         # lo mínimo que puede medir (pestañas + algo de contenido)
+    EDITOR_MIN = 200            # lo mínimo que se le deja al editor (con su barra y su estado)
+
+    def _sep_reset(self, event=None):
+        self._out_panel.config(height=self.OUT_PANEL_DEFAULT)
+
+    def _sep_press(self, event):
+        self._out_drag = (event.y_root, self._out_panel.winfo_height())
+
+    def _sep_drag(self, event):
+        if self._out_drag is None:
+            return
+        start_y, start_height = self._out_drag
+        wanted = start_height + (start_y - event.y_root)            # subir el separador agranda el panel
+        limit = max(self.OUT_PANEL_MIN, self._out_parent.winfo_height() - self.EDITOR_MIN - self._out_sep.winfo_height())
+        self._out_panel.config(height=max(self.OUT_PANEL_MIN, min(wanted, limit)))
+
     def _output_panel(self, parent):
-        sep = tk.Frame(parent, bg=C['border2'], height=2, cursor='sb_v_double_arrow')
+        sep = tk.Frame(parent, bg=C['border2'], height=6, cursor='sb_v_double_arrow')
         sep.pack(fill=tk.X)
-        panel = tk.Frame(parent, bg=C['bg1'], height=320)
+        panel = tk.Frame(parent, bg=C['bg1'], height=self.OUT_PANEL_DEFAULT)
         panel.pack(fill=tk.X)
         panel.pack_propagate(False)
+        # arrastrar el separador agranda o achica toda la parte de abajo; doble clic la deja en su tamaño original
+        self._out_sep, self._out_panel, self._out_parent = sep, panel, parent
+        self._out_drag = None
+        sep.bind('<ButtonPress-1>', self._sep_press)
+        sep.bind('<B1-Motion>', self._sep_drag)
+        sep.bind('<ButtonRelease-1>', lambda e: setattr(self, '_out_drag', None))
+        sep.bind('<Double-1>', self._sep_reset)
+        sep.bind('<Enter>', lambda e: sep.config(bg=C['green_dim']))
+        sep.bind('<Leave>', lambda e: sep.config(bg=C['border2']))
         tab_bar = tk.Frame(panel, bg=C['bg2'], height=28)
         tab_bar.pack(fill=tk.X)
         tab_bar.pack_propagate(False)
         self.out_frames = {}
         self.out_btns = {}
         self.active_out = tk.StringVar(value='Resultado')
-        tabs = [('Resultado', C['green']), ('Tokens', C['amber']), ('SLR(1)', C['green']), ('LALR', C['blue']), ('LL(1)', C['purple']), ('LR(0)', C['amber']), ('FIRST/FOLLOW', C['text2']), ('YALex Rules', C['green']), ('Grammar YAPar', C['blue']), ('Tokens CPS', C['amber']), ('Árbol CPS', C['purple']), ('Errores Léxicos', C['amber']), ('Errores Sintácticos', C['blue']), ('Errores Semánticos', C['red']), ('Símbolos', C['blue']), ('Language CPS', C['green']), ('Grammar CPS', C['amber'])]
+        tabs = [('Resultado', C['green']), ('Tokens', C['amber']), ('SLR(1)', C['green']), ('LALR', C['blue']), ('LL(1)', C['purple']), ('LR(0)', C['amber']), ('FIRST/FOLLOW', C['text2']), ('YALex Rules', C['green']), ('Grammar YAPar', C['blue']), ('Tokens CPS', C['amber']), ('Árbol CPS', C['purple']), ('Errores Léxicos', C['amber']), ('Errores Sintácticos', C['blue']), ('Errores Semánticos', C['red']), ('Símbolos', C['blue']), ('TAC CPS', C['green']), ('Memoria CPS', C['purple']), ('Pruebas CPS', C['amber']), ('Language CPS', C['green']), ('Grammar CPS', C['amber'])]
         out_container = tk.Frame(panel, bg=C['bg1'])
         out_container.pack(fill=tk.BOTH, expand=True)
         for name, color in tabs:
@@ -337,6 +368,8 @@ class IDE(tk.Tk):
                 widget = self._make_problems_widget(frame)
             elif name == 'Símbolos':
                 widget = self._make_symbols_widget(frame)
+            elif name == 'Pruebas CPS':
+                widget = self._make_tests_widget(frame)
             else:
                 widget = scrolledtext.ScrolledText(frame, bg=C['bg1'], fg=C['text'], insertbackground=C['cursor'], font=FT, relief=tk.FLAT, padx=12, pady=8, wrap=tk.NONE, state=tk.DISABLED, highlightthickness=0)
                 widget.pack(fill=tk.BOTH, expand=True)
@@ -358,7 +391,7 @@ class IDE(tk.Tk):
 
     def _update_context_tabs(self, editor_tab):
         """Muestra solo las herramientas relevantes al modulo seleccionado."""
-        cps_tabs = {'Tokens CPS', 'Árbol CPS', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos', 'Símbolos', 'Language CPS', 'Grammar CPS'}
+        cps_tabs = {'Tokens CPS', 'Árbol CPS', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos', 'Símbolos', 'TAC CPS', 'Memoria CPS', 'Pruebas CPS', 'Language CPS', 'Grammar CPS'}
         yal_tabs = {'Tokens', 'YALex Rules'}
         yapar_tabs = {'Resultado', 'SLR(1)', 'LALR', 'LL(1)', 'LR(0)', 'FIRST/FOLLOW', 'Grammar YAPar'}
         if editor_tab == 'Compiscript':
@@ -510,6 +543,231 @@ class IDE(tk.Tk):
             self._write('Resultado', f'EXCEPTION:\n{e}\n\n{traceback.format_exc()}\n', C['red'])
             self._status(f'error: {e}', 'error')
 
+    def _run_cps_tests(self):
+        """Corre la batería de pruebas del generador de código intermedio (tests/codegen)."""
+        if getattr(self, '_cps_tests_running', False):
+            return
+        self._cps_tests_running = True
+        self._cps_tests_result = None
+        self._status('running CPS tests...', 'working')
+        self._tests_show_running()
+        self._switch_out('Pruebas CPS')
+        threading.Thread(target=self._cps_tests_worker, daemon=True).start()
+        self.after(150, self._poll_cps_tests)
+
+    def _poll_cps_tests(self):
+        """Espera el resultado del hilo sin que el hilo toque la interfaz."""
+        if self._cps_tests_result is None:
+            self.after(150, self._poll_cps_tests)
+            return
+        text, ok = self._cps_tests_result
+        self._finish_cps_tests(text, ok)
+
+    def _cps_tests_worker(self):
+        root = self._repo_root()
+        script = os.path.join(root, 'tests', 'codegen', 'run_tests.py')
+        if not os.path.exists(script):
+            self._cps_tests_result = (f'No se encontró la batería de pruebas:\n{script}', False)
+            return
+        env = dict(os.environ, PYTHONIOENCODING='utf-8')
+        flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
+        try:
+            proc = subprocess.run([sys.executable, script, '-v'], cwd=root, capture_output=True, text=True,
+                                  encoding='utf-8', errors='replace', env=env, timeout=300, creationflags=flags)
+            text = proc.stdout
+            if proc.stderr.strip():
+                text += '\n' + proc.stderr
+            ok = proc.returncode == 0
+        except Exception as e:
+            text, ok = f'No se pudieron correr las pruebas: {e}', False
+        self._cps_tests_result = (text, ok)
+
+    @staticmethod
+    def _repo_root():
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # ── Lista interactiva de pruebas ─────────────────────
+
+    def _make_tests_widget(self, parent):
+        """Lista de pruebas: al hacer clic en una se abre en el editor y se compila."""
+        shell = tk.Frame(parent, bg=C['bg1'])
+        shell.pack(fill=tk.BOTH, expand=True, padx=10, pady=9)
+
+        self.tests_summary = tk.Label(
+            shell, text='Pulsa TEST CPS para correr la batería. Después haz clic en una prueba para abrirla en el editor y ver su TAC.',
+            bg=C['bg1'], fg=C['text2'], font=('Consolas', 9, 'bold'), anchor='w', justify=tk.LEFT, wraplength=1000)
+        self.tests_summary.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0, 6))
+
+        # divisor arrastrable entre la lista (arriba) y el detalle (abajo)
+        paned = tk.PanedWindow(shell, orient=tk.VERTICAL, bg=C['bg3'], bd=0, sashwidth=7, sashrelief=tk.FLAT,
+                               sashcursor='sb_v_double_arrow', opaqueresize=True)
+        paned.grid(row=1, column=0, sticky='nsew')
+
+        top = tk.Frame(paned, bg=C['bg1'])
+        tree = ttk.Treeview(top, columns=('status', 'detail'), show='tree headings', selectmode='browse', style='Symbols.Treeview')
+        tree.heading('#0', text='PRUEBA')
+        tree.column('#0', width=300, minwidth=200, stretch=False)
+        tree.heading('status', text='ESTADO')
+        tree.column('status', width=100, minwidth=80, anchor='center', stretch=False)
+        tree.heading('detail', text='DETALLE')
+        tree.column('detail', width=520, minwidth=200, anchor='w', stretch=True)
+        y = ttk.Scrollbar(top, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=y.set)
+        tree.grid(row=0, column=0, sticky='nsew')
+        y.grid(row=0, column=1, sticky='ns')
+        top.grid_rowconfigure(0, weight=1)
+        top.grid_columnconfigure(0, weight=1)
+
+        bottom = tk.Frame(paned, bg=C['bg2'])
+        info = tk.Text(bottom, height=6, bg=C['bg2'], fg=C['text'], font=('Consolas', 9), relief=tk.FLAT, padx=10, pady=6,
+                       wrap=tk.WORD, state=tk.DISABLED, highlightthickness=0)
+        info_y = ttk.Scrollbar(bottom, orient='vertical', command=info.yview)
+        info.configure(yscrollcommand=info_y.set)
+        info.grid(row=0, column=0, sticky='nsew')
+        info_y.grid(row=0, column=1, sticky='ns')
+        bottom.grid_rowconfigure(0, weight=1)
+        bottom.grid_columnconfigure(0, weight=1)
+        info.tag_configure('title', foreground=C['amber'], font=('Consolas', 9, 'bold'))
+        info.tag_configure('pass', foreground=C['green'])
+        info.tag_configure('fail', foreground=C['red'])
+
+        paned.add(top, minsize=70, stretch='always')
+        paned.add(bottom, minsize=40, stretch='never')
+        self.tests_paned = paned
+
+        shell.grid_rowconfigure(1, weight=1)
+        shell.grid_columnconfigure(0, weight=1)
+
+        tree.tag_configure('group', foreground=C['amber'], background=C['bg2'], font=('Consolas', 9, 'bold'))
+        tree.tag_configure('pass', foreground=C['green'])
+        tree.tag_configure('fail', foreground=C['red'])
+        tree.bind('<<TreeviewSelect>>', lambda e: self._open_selected_test())
+        tree.bind('<Double-1>', lambda e: self._open_selected_test())   # volver a abrirla después de editarla
+        tree.bind('<Return>', lambda e: self._open_selected_test())
+
+        self.tests_tree = tree
+        self.tests_info = info
+        self._test_info = {}
+        return tree
+
+    def _tests_show_running(self):
+        self._test_info = {}
+        self.tests_tree.delete(*self.tests_tree.get_children())
+        self.tests_summary.config(text='Corriendo pruebas...', fg=C['amber'])
+        self._set_test_info([('', None)])
+
+    def _set_test_info(self, parts):
+        """Escribe en el panel de detalle una lista de (texto, etiqueta)."""
+        self.tests_info.config(state=tk.NORMAL)
+        self.tests_info.delete('1.0', tk.END)
+        for text, tag in parts:
+            self.tests_info.insert(tk.END, text, tag or '')
+        self.tests_info.config(state=tk.DISABLED)
+
+    @staticmethod
+    def _parse_cps_tests(text):
+        """
+        Convierte la salida de `run_tests.py -v` en grupos de pruebas:
+            [(grupo, [{'name', 'ok', 'problems'}])], 'N/M'
+        """
+        groups = ('Pruebas unitarias', 'Casos exitosos', 'Casos fallidos')
+        result, current, last = [], None, None
+        for line in text.splitlines():
+            if line and not line[0].isspace() and line.strip() in groups:
+                current = (line.strip(), [])
+                result.append(current)
+                last = None
+                continue
+            m = re.match(r'^  (ok|FALLA)\s+(\S+)\s*$', line)
+            if m and current is not None:
+                last = {'name': m.group(2), 'ok': m.group(1) == 'ok', 'problems': []}
+                current[1].append(last)
+                continue
+            if last is not None and not last['ok'] and re.match(r'^ {4,}\S', line):
+                last['problems'].append(line[4:])
+        total = re.search(r'(\d+)/(\d+) pruebas correctas', text)
+        return result, (total.group(1), total.group(2)) if total else None
+
+    def _finish_cps_tests(self, text, ok):
+        self._cps_tests_running = False
+        groups, total = self._parse_cps_tests(text)
+        tree = self.tests_tree
+        tree.delete(*tree.get_children())
+        self._test_info = {}
+
+        if not groups or total is None:
+            # la corrida no produjo un resultado legible (por ejemplo, el script falló al arrancar)
+            self.tests_summary.config(text='No se pudo leer el resultado de las pruebas', fg=C['red'])
+            self._set_test_info([('Salida de run_tests.py:\n\n', 'title'), (text.strip() or '(vacía)', 'fail')])
+            self._status('CPS tests failed to run', 'error')
+            self._switch_out('Pruebas CPS')
+            return
+
+        base = os.path.join(self._repo_root(), 'tests', 'codegen')
+        for group_name, tests in groups:
+            passed = sum(1 for t in tests if t['ok'])
+            gid = tree.insert('', 'end', text=f'{group_name}  ({passed}/{len(tests)})', open=True, tags=('group',))
+            for t in tests:
+                kind = t['name'].split('/')[0] if '/' in t['name'] else 'unit'
+                if t['ok']:
+                    detail = {'ok': 'TAC y salida verificados', 'error': 'errores esperados detectados'}.get(kind, '')
+                else:
+                    detail = next((p.lstrip('- ') for p in t['problems'] if p.strip()), 'falló')
+                path = os.path.join(base, *t['name'].split('/')) if kind in ('ok', 'error') else None
+                iid = tree.insert(gid, 'end', text=t['name'], values=('✓ OK' if t['ok'] else '✗ FALLA', detail),
+                                  tags=('pass' if t['ok'] else 'fail',))
+                self._test_info[iid] = {'name': t['name'], 'ok': t['ok'], 'problems': t['problems'], 'path': path, 'kind': kind}
+
+        passed_all = total[0] == total[1]
+        self.tests_summary.config(
+            text=f'{total[0]}/{total[1]} pruebas correctas   ·   haz clic en una para abrirla en el editor y ver su TAC',
+            fg=C['green'] if passed_all else C['red'])
+        self._set_test_info([('Selecciona una prueba de la lista.', None)])
+        self._status(f'CPS tests: {total[0]}/{total[1]} pruebas correctas', 'ok' if passed_all else 'error')
+        self._switch_out('Pruebas CPS')
+
+    def _open_selected_test(self):
+        """Abre la prueba seleccionada en el editor de Compiscript y la compila para mostrar su TAC."""
+        selection = self.tests_tree.selection()
+        info = self._test_info.get(selection[0]) if selection else None
+        if info is None:          # fila de grupo o nada seleccionado
+            return
+        self._show_test_detail(info)
+        path = info['path']
+        if path and os.path.exists(path):
+            # sin ruta asociada, para que Guardar no pueda sobrescribir el archivo de la prueba
+            self.cps_path.set('')
+            self._load_to_editor(path, 'cps  .cps')
+            self._analyze_compiscript()
+
+    def _show_test_detail(self, info):
+        def read_file(path):
+            try:
+                with open(path, encoding='utf-8') as f:
+                    return f.read().replace('\r\n', '\n').rstrip('\n')
+            except OSError:
+                return None
+
+        parts = [(info['name'], 'title'), ('   ' + ('✓ correcta' if info['ok'] else '✗ falla') + '\n\n', 'pass' if info['ok'] else 'fail')]
+        if info['problems']:
+            parts.append(('Problemas:\n', 'title'))
+            parts.append(('\n'.join(info['problems']) + '\n\n', 'fail'))
+        if info['path']:
+            base = info['path'][:-4]
+            if info['kind'] == 'ok':
+                expected = read_file(base + '.out')
+                parts.append(('Salida esperada al ejecutar el TAC:\n', 'title'))
+                lines = (expected or '(no se encontró el .out)').split('\n')
+                parts.append(('\n'.join(lines[:12]) + ('\n…' if len(lines) > 12 else '') + '\n\n', None))
+                parts.append(('Se abrió en el editor y se compiló: mira las pestañas TAC CPS y Memoria CPS.', None))
+            else:
+                expected = read_file(base + '.err')
+                parts.append(('Errores que debe reportar:\n', 'title'))
+                lines = [l for l in (expected or '').split('\n') if l.strip() and not l.startswith('#')]
+                parts.append(('\n'.join(lines) + '\n\n', None))
+                parts.append(('Se abrió en el editor y se compiló: mira la pestaña de errores.', None))
+        self._set_test_info(parts)
+
     def _run_compiscript(self):
         """Compila el contenido del editor Compiscript en un hilo separado."""
         threading.Thread(target=self._analyze_compiscript, daemon=True).start()
@@ -517,7 +775,7 @@ class IDE(tk.Tk):
     def _analyze_compiscript(self):
         """Pipeline CPS: análisis léxico -> sintáctico -> semántico."""
         self._status('compiling Compiscript...', 'working')
-        for tab in ('Tokens CPS', 'Árbol CPS', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos', 'Símbolos'):
+        for tab in ('Tokens CPS', 'Árbol CPS', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos', 'Símbolos', 'TAC CPS', 'Memoria CPS'):
             self._clear_tab(tab)
         self._populate_cps_reference()
         try:
@@ -555,7 +813,19 @@ class IDE(tk.Tk):
                 analyzer.visit(tree)
                 semantic_errors = analyzer.errors
                 self._show_symbol_table(analyzer.table)
+                if not semantic_errors:
+                    # 4) CODIGO INTERMEDIO: solo si el programa pasó el análisis semántico
+                    generator = CodeGenerator(analyzer)
+                    generator.generate(tree)
+                    semantic_errors = list(generator.errors)
+                    self._set_text('TAC CPS', generator.format())
+                    self._set_text('Memoria CPS', generator.memory_report())
+                else:
+                    self._set_text('TAC CPS', 'Sin código intermedio: corrige primero los errores semánticos.')
+                    self._set_text('Memoria CPS', 'Sin código intermedio: corrige primero los errores semánticos.')
             else:
+                self._set_text('TAC CPS', 'Sin código intermedio: corrige primero los errores léxicos/sintácticos.')
+                self._set_text('Memoria CPS', 'Sin código intermedio: corrige primero los errores léxicos/sintácticos.')
                 _, symbols = self.out_frames['Símbolos']
                 symbols.delete(*symbols.get_children())
                 symbols.insert('', 'end', text='Análisis semántico omitido', values=('INFO', '', '', '', 'Corrige primero los errores léxicos/sintácticos'))
@@ -573,8 +843,8 @@ class IDE(tk.Tk):
                 self._status(f'CPS: {total_errors} error(s)', 'error')
                 self._switch_out('Errores Semánticos')
             else:
-                self._status('Compiscript: lexical + syntax + semantic OK', 'ok')
-                self._switch_out('Árbol CPS')
+                self._status('Compiscript: lexical + syntax + semantic + TAC OK', 'ok')
+                self._switch_out('TAC CPS')
         except Exception as e:
             import traceback
             self._show_cps_problems([], [], [], empty_message=f'EXCEPTION: {e}')
@@ -851,6 +1121,14 @@ class IDE(tk.Tk):
         tree.tag_configure('variable', foreground=C['green'])
         tree.tag_configure('parameter', foreground=C['text2'])
         return tree
+
+    def _set_text(self, tab, text):
+        """Reemplaza el contenido de una pestaña de texto."""
+        _, widget = self.out_frames[tab]
+        widget.config(state=tk.NORMAL)
+        widget.delete('1.0', tk.END)
+        widget.insert(tk.END, text)
+        widget.config(state=tk.DISABLED)
 
     def _clear_tab(self, tab):
         _, widget = self.out_frames[tab]

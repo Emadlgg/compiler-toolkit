@@ -87,3 +87,10 @@ class DeadCodeError(SemanticError):
     def __init__(self, line=None, col=None, severity="error"):
         super().__init__("Código muerto: instrucciones después de return/break/continue", line, col, severity)
 
+
+class CodegenError(SemanticError):
+    """Construcción válida del lenguaje que el generador de código no soporta."""
+
+    @property
+    def label(self):
+        return "Error de generación" if self.severity == "error" else "Advertencia"

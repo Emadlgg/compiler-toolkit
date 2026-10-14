@@ -1,0 +1,3 @@
+# errores de sintaxis: no debe llegar a generar código
+[Línea 1:17] mismatched input ';'
+[Línea 3:0] mismatched input '<EOF>'

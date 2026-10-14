@@ -1,0 +1,5 @@
+# asignación a listas, índices y foreach
+[Línea 2:0] Error semántico: Tipo incompatible
+[Línea 3:4] Error semántico: Tipo incompatible
+Operación '[]' no válida para tipo 'integer'
+se esperaba 'array', se obtuvo 'integer'

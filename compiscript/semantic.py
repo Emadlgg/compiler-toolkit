@@ -20,6 +20,25 @@ from compiscript.generated.CompiscriptParser import CompiscriptParser
 from compiscript.symbol_table import SymbolTable, Symbol, Type
 from compiscript.errors import SemanticError, UndeclaredVariableError, RedeclarationError, TypeMismatchError, InvalidOperationError, ReturnOutsideFunctionError, BreakOutsideLoopError, ContinueOutsideLoopError, NotCallableError, ArgumentCountError, ReturnTypeMismatchError, UndeclaredClassError, AttributeNotFoundError, ThisOutsideClassError, ConstNotInitializedError, NonBooleanConditionError, DeadCodeError
 
+def for_parts(ctx):
+    """
+    Separa la condición y la actualización de un for. Cualquiera de las dos
+    puede faltar, así que no basta con mirar cuántas expresiones hay:
+    se distingue por estar antes o después del segundo ';'.
+    """
+    cond = update = None
+    seen_semicolon = False
+    for child in list(ctx.getChildren())[3:-2]:
+        if isinstance(child, CompiscriptParser.ExpressionContext):
+            if seen_semicolon:
+                update = child
+            else:
+                cond = child
+        elif child.getText() == ';':
+            seen_semicolon = True
+    return cond, update
+
+
 # Si es False, el código muerto se reporta como advertencia y no bloquea la
 # generación de código. Por defecto es error, como en las pruebas existentes.
 DEAD_CODE_IS_ERROR = True
@@ -387,13 +406,13 @@ class SemanticAnalyzer(CompiscriptVisitor):
             self.visit(ctx.variableDeclaration())
         elif ctx.assignment():
             self.visit(ctx.assignment())
-        expressions = ctx.expression()
-        if expressions:
-            condition_type = self.visit(expressions[0])
+        cond, update = for_parts(ctx)
+        if cond is not None:
+            condition_type = self.visit(cond)
             if condition_type not in (Type.BOOLEAN, Type.ANY, Type.UNKNOWN):
-                self.error(NonBooleanConditionError('for', condition_type, self._line(expressions[0]), self._col(expressions[0])))
-            if len(expressions) > 1:
-                self.visit(expressions[1])
+                self.error(NonBooleanConditionError('for', condition_type, self._line(cond), self._col(cond)))
+        if update is not None:
+            self.visit(update)
         self.visit(ctx.block())
         self.table.exit_scope()
 

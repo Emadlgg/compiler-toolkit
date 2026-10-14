@@ -6,6 +6,7 @@ Uso:
     python compiscript.py archivo.cps --tree
     python compiscript.py archivo.cps --symbols
     python compiscript.py archivo.cps --tac
+    python compiscript.py archivo.cps --frames
     python compiscript.py archivo.cps --all
     python compiscript.py --help
 """
@@ -47,7 +48,9 @@ Opciones:
   --tree       Mostrar árbol sintáctico
   --symbols    Mostrar tabla de símbolos (con direcciones, offsets y tamaños)
   --tac        Generar y mostrar el código intermedio (TAC)
-  --all        Mostrar árbol sintáctico, tabla de símbolos y TAC
+  --frames     Mostrar la organización de memoria: datos globales, clases y
+               registros de activación
+  --all        Mostrar árbol sintáctico, tabla de símbolos, TAC y registros
   -h, --help   Mostrar esta ayuda
 
 Ejemplos:
@@ -55,6 +58,7 @@ Ejemplos:
   python compiscript.py archivo.cps --tree
   python compiscript.py archivo.cps --symbols
   python compiscript.py archivo.cps --tac
+  python compiscript.py archivo.cps --frames
   python compiscript.py archivo.cps --all
 
 Tests:
@@ -180,27 +184,53 @@ def analyze(tree):
 # CÓDIGO INTERMEDIO
 # ============================================================
 
-def generate_tac(tree, analyzer):
+def generate_tac(tree, analyzer, show_tac=True, show_frames=False):
     """
     Corre el generador de código intermedio sobre un programa que ya pasó
-    el análisis semántico e imprime el TAC resultante.
-
-    El generador vive en compiscript/codegen.py y se importa aquí para que
-    el CLI siga funcionando mientras esa fase no esté disponible.
+    el análisis semántico e imprime el TAC y/o la organización de memoria.
     """
 
-    try:
-        from compiscript.codegen import CodeGenerator
-    except ImportError:
-        print("  El generador de código intermedio todavía no está implementado")
-        print("  (falta compiscript/codegen.py).")
-        return
+    from compiscript.codegen import CodeGenerator
 
     generator = CodeGenerator(analyzer)
-    instructions = generator.generate(tree)
+    generator.generate(tree)
 
-    for instruction in instructions:
-        print(f"  {instruction}")
+    if generator.errors:
+        print(
+            f"ERRORES DE GENERACIÓN "
+            f"({len(generator.errors)}):"
+        )
+
+        for error in generator.errors:
+            print(f"  • {error}")
+
+        print()
+
+    if show_tac:
+        print(
+            "── CÓDIGO INTERMEDIO (TAC) "
+            "──────────────────────"
+        )
+
+        print()
+
+        for line in generator.format().split("\n"):
+            print(f"  {line}" if line else "")
+
+        print()
+
+    if show_frames:
+        print(
+            "── MEMORIA: REGISTROS DE ACTIVACIÓN "
+            "───────────────"
+        )
+
+        print()
+
+        for line in generator.memory_report().split("\n"):
+            print(f"  {line}" if line else "")
+
+        print()
 
 
 # ============================================================
@@ -288,6 +318,7 @@ def validate_arguments(args):
         "--tree",
         "--symbols",
         "--tac",
+        "--frames",
         "--all",
     }
 
@@ -351,6 +382,11 @@ def main():
 
     show_tac = (
         "--tac" in args
+        or "--all" in args
+    )
+
+    show_frames = (
+        "--frames" in args
         or "--all" in args
     )
 
@@ -484,20 +520,13 @@ def main():
     # CÓDIGO INTERMEDIO
     # ========================================================
 
-    if show_tac:
-        print()
-
-        print(
-            "── CÓDIGO INTERMEDIO (TAC) "
-            "──────────────────────"
-        )
-
+    if show_tac or show_frames:
         print()
 
         if syntax_errors or analyzer.errors:
             print("  No se genera código: corrige los errores primero.")
         else:
-            generate_tac(tree, analyzer)
+            generate_tac(tree, analyzer, show_tac, show_frames)
 
     # --------------------------------------------------------
     # Footer

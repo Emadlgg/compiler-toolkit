@@ -1,0 +1,6 @@
+# constantes, métodos, atributos y clases
+No se puede reasignar la constante 'k'
+No se puede asignar al método 'm'
+[Línea 9:0] Error semántico: Tipo incompatible
+La clase 'A' no tiene atributo o método 'zzz'
+Clase 'Inexistente' no declarada

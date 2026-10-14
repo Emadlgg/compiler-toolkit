@@ -418,6 +418,42 @@ Después de analizar, el `SemanticAnalyzer` deja anotado el árbol para las fase
 
 > El parser se importa siempre como `compiscript.generated.*`. Importarlo también como módulo suelto crea dos copias de las clases y los `isinstance` sobre el árbol fallan sin avisar.
 
+## Generación de código intermedio
+
+Si el programa no tiene errores, el compilador produce código de tres direcciones (TAC).
+
+```bash
+python compiscript.py programa.cps --tac       # código intermedio
+python compiscript.py programa.cps --frames    # datos globales, clases y registros de activación
+python compiscript.py programa.cps --all       # todo, incluido el árbol y la tabla de símbolos
+```
+
+En la GUI, la pestaña *Compiscript* tiene dos pestañas nuevas: *TAC CPS* y *Memoria CPS*.
+
+```text
+func fact:                             ; nivel 1, registro de 24 bytes
+    enter 24
+    if n > 1 goto L1
+    return 1
+  L1:
+    t0 = n - 1
+    param t0
+    t0 = call fact, 1
+    t0 = n * t0
+    return t0
+```
+
+Soporta expresiones aritméticas, lógicas y de comparación (con cortocircuito), asignaciones, `if`, `while`, `do-while`, `for`, `foreach`, `switch`, `break` y `continue`, funciones recursivas y anidadas con acceso al entorno, clases con herencia, y listas. `try/catch` y el uso de funciones como valores se reportan como errores de generación.
+
+* [`docs/CI.md`](docs/CI.md): el lenguaje intermedio, con ejemplos de traducción y los supuestos.
+* [`docs/arquitectura.md`](docs/arquitectura.md): organización del código, cómo ejecutarlo y cómo agregar construcciones.
+
+Batería de pruebas, que además ejecuta el TAC generado en un intérprete mínimo para comprobar que hace lo que debe:
+
+```bash
+python tests/codegen/run_tests.py
+```
+
 ## Listas
 
 El análisis contempla listas y acceso mediante índices.

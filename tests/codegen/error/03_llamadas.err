@@ -1,0 +1,4 @@
+# cantidad y tipo de argumentos, función inexistente
+La función 'suma' espera 2 argumentos, se dieron 1
+Tipo incompatible: se esperaba 'integer', se obtuvo 'string'
+Variable 'noExiste' no declarada
