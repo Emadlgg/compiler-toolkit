@@ -1,0 +1,5 @@
+-- db: universidad
+CREATE TABLE estudiantes (id INT);
+CREATE TABLE t1 (a INT, A VARCHAR(5));
+CREATE TABLE t2 (a INT PRIMARY KEY, b INT PRIMARY KEY);
+CREATE TABLE t3 (a VARCHAR(0));

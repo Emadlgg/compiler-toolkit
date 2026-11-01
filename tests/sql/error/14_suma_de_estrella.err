@@ -1,0 +1,2 @@
+# solo COUNT acepta *; el mensaje debe hablar de la función, no de palabras reservadas
+sintáctico 1:7 solo COUNT acepta *

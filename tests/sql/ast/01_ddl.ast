@@ -1,0 +1,13 @@
+Script
+  CreateTable estudiantes
+    ColumnDef id INT PRIMARY KEY
+    ColumnDef nombre VARCHAR(50) NOT NULL
+    ColumnDef edad INT
+    ColumnDef activo BOOLEAN
+    ColumnDef ingreso DATE
+  CreateTable cursos
+    ColumnDef id INT
+    ColumnDef nombre VARCHAR(40) NOT NULL UNIQUE
+  CreateIndex idx_edad ON estudiantes(edad)
+  DropIndex idx_edad
+  DropTable cursos

@@ -1,0 +1,11 @@
+CREATE TABLE departamentos (id INT PRIMARY KEY, nombre VARCHAR(40));
+CREATE TABLE empleados (id INT PRIMARY KEY, nombre VARCHAR(40), departamento_id INT, salario FLOAT);
+INSERT INTO departamentos VALUES (1, 'Ingenieria');
+INSERT INTO departamentos VALUES (2, 'Ventas');
+INSERT INTO empleados VALUES (1, 'Ana', 1, 3000.0);
+INSERT INTO empleados VALUES (2, 'Luis', 1, 4000.0);
+INSERT INTO empleados VALUES (3, 'Maria', 2, 2500.0);
+INSERT INTO empleados VALUES (4, 'Jose', 2, 3500.0);
+SELECT e.nombre, d.nombre AS departamento, e.salario FROM empleados e INNER JOIN departamentos d ON e.departamento_id = d.id ORDER BY e.salario DESC;
+SELECT d.nombre AS departamento, COUNT(*) AS empleados, SUM(e.salario) AS total, AVG(e.salario) AS promedio, MIN(e.salario) AS minimo, MAX(e.salario) AS maximo FROM empleados e INNER JOIN departamentos d ON e.departamento_id = d.id GROUP BY d.nombre HAVING COUNT(*) >= 2 ORDER BY total DESC;
+SELECT COUNT(*) AS cantidad FROM empleados WHERE salario > 10000;

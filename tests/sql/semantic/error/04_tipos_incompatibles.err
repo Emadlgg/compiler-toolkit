@@ -1,0 +1,11 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:32 No se puede comparar INT con VARCHAR (operador '=')
+semántico 3:32 El operador '+' necesita números pero recibe VARCHAR y INT
+semántico 4:32 AND necesita condiciones booleanas pero el lado izquierdo es de tipo INT
+semántico 5:32 Un valor BOOLEAN solo se puede comparar con = o <>
+semántico 6:32 La condición de WHERE debe ser booleana pero es de tipo INT
+semántico 7:32 No se puede comparar DATE con INT
+semántico 8:42 Fecha no válida: 'no es fecha'. El formato es AAAA-MM-DD
+semántico 9:7 El operador '-' necesita un número pero recibe VARCHAR
+semántico 10:32 NOT necesita una condición booleana pero recibe INT
+semántico 11:42 Fecha no válida: '2023-02-30'

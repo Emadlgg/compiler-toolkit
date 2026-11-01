@@ -1,0 +1,10 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:32 La función COUNT no se puede usar en WHERE. Para filtrar por el resultado de una agregación usa HAVING
+semántico 3:11 Una función de agregación no puede contener otra función de agregación
+semántico 4:11 SUM necesita un argumento numérico pero recibe VARCHAR
+semántico 5:11 MAX no se puede aplicar a un valor de tipo BOOLEAN
+semántico 6:7 La columna 'nombre' debe aparecer en GROUP BY o usarse dentro de una función de agregación
+semántico 7:15 La columna 'nombre' debe aparecer en GROUP BY
+semántico 8:7 SELECT * no se puede usar junto con GROUP BY o funciones de agregación
+semántico 9:64 La columna 'edad' debe aparecer en GROUP BY
+semántico 10:56 La columna 'nombre' debe aparecer en GROUP BY

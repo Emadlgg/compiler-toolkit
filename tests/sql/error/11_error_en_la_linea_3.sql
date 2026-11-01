@@ -1,0 +1,3 @@
+CREATE TABLE a (id INT);
+INSERT INTO a VALUES (1);
+UPDATE a SET id = ;

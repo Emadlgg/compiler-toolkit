@@ -1,0 +1,30 @@
+Script
+  Select
+    items:
+      SelectExpr
+        ColumnRef c.nombre
+      SelectExpr AS inscritos
+        Aggregate COUNT(*)
+      SelectExpr
+        Aggregate AVG
+          ColumnRef i.nota
+    from:
+      TableRef cursos AS c
+    joins:
+      Join INNER
+        TableRef inscripciones AS i
+        on:
+          BinaryOp =
+            ColumnRef c.id
+            ColumnRef i.curso_id
+    group by:
+      ColumnRef c.nombre
+    having:
+      BinaryOp >=
+        Aggregate COUNT(*)
+        Literal INT 2
+    order by:
+      OrderItem DESC
+        ColumnRef inscritos
+      OrderItem ASC
+        ColumnRef c.nombre

@@ -1,0 +1,21 @@
+# metadata.txt: esquema de la base de datos (lo escribe el intérprete; también se puede editar a mano)
+
+table estudiantes
+  column id INT PRIMARY KEY
+  column nombre VARCHAR(50) NOT NULL
+  column edad INT
+  column promedio FLOAT
+  column activo BOOLEAN
+  column ingreso DATE
+  index idx_estudiantes_edad edad
+
+table cursos
+  column id INT PRIMARY KEY
+  column nombre VARCHAR(50) NOT NULL
+  column creditos INT
+
+table inscripciones
+  column estudiante_id INT
+  column curso_id INT
+  column nota FLOAT
+  index idx_inscripciones_curso curso_id

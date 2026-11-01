@@ -1,1032 +1,386 @@
-# ⚙️ Compiler Toolkit
+# Compiler Lab — Toolkit de Construcción de Compiladores
 
-### Generador de analizadores léxicos, sintácticos y semánticos
+**Proyecto académico · Construcción de Compiladores · Universidad del Valle de Guatemala · 2026**
 
-**Proyecto académico — Construcción de Compiladores**
-Universidad del Valle de Guatemala · 2026
+Compiler Lab reúne herramientas de análisis léxico, sintáctico y semántico, generación de código intermedio e interpretación de SQL en una aplicación de escritorio desarrollada en Python. Los componentes pueden utilizarse por separado desde la terminal o desde la interfaz gráfica Tkinter.
 
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python\&logoColor=white)
-![ANTLR](https://img.shields.io/badge/ANTLR-4.13.2-EF7B4D)
-![Graphviz](https://img.shields.io/badge/Graphviz-Visualización-2596BE)
-![GUI](https://img.shields.io/badge/GUI-Tkinter-4B8BBE)
-![Status](https://img.shields.io/badge/Estado-Completado-success)
+## Contenido
 
----
+1. [Componentes](#componentes)
+2. [Requisitos e instalación](#requisitos-e-instalación)
+3. [Inicio rápido](#inicio-rápido)
+4. [Interfaz gráfica](#interfaz-gráfica)
+5. [YALex](#yalex-generador-léxico)
+6. [YAPar](#yapar-generador-sintáctico)
+7. [Compiscript](#compiscript)
+8. [SQL](#intérprete-sql-con-almacenamiento-en-archivos)
+9. [Pruebas](#pruebas)
+10. [Estructura del proyecto](#estructura-del-proyecto)
+11. [Limitaciones y precauciones](#limitaciones-y-precauciones)
+12. [Documentación complementaria](#documentación-complementaria)
 
-## 📖 Sobre el proyecto
+## Componentes
 
-**Compiler Toolkit** reúne en una sola aplicación tres etapas fundamentales de la construcción de compiladores.
+| Herramienta | Entrada | Función principal | Salida |
+|---|---|---|---|
+| **YALex** | `.yal` | Construye un analizador léxico a partir de expresiones regulares | Lexer Python, tokens, autómatas y visualizaciones |
+| **YAPar** | `.yapar`, `.yal`, `.txt` | Construye analizadores sintácticos SLR(1), LALR y LL(1) | Tablas, conflictos, aceptación/rechazo y pasos |
+| **Compiscript** | `.cps` | Análisis léxico, sintáctico y semántico mediante ANTLR | Tokens, árbol, errores y tabla de símbolos |
+| **Código intermedio CPS** | `.cps` válido | Genera código de tres direcciones (TAC) y reporte de memoria | TAC, temporales, offsets y registros de activación |
+| **SQL** | `.sql` | Analiza y ejecuta sentencias SQL con almacenamiento propio | AST, errores, tablas CSV, metadatos e índices JSON |
+| **GUI** | Archivos de las herramientas | Integra editores, controles y paneles de resultados | Aplicación Tkinter |
 
-El proyecto implementa desde cero algoritmos clásicos de análisis léxico y sintáctico, además de integrar **ANTLR4** para construir el front-end de **Compiscript**, un lenguaje basado en un subconjunto de TypeScript.
-
-El toolkit está compuesto por:
-
-| Componente           | Entrada              | Resultado                               |
-| -------------------- | -------------------- | --------------------------------------- |
-| 🔤 **YALex**         | `.yal`               | Generador de analizadores léxicos       |
-| 🌳 **YAPar**         | `.yapar`             | Parsers SLR(1), LALR y LL(1)            |
-| 🧠 **Compiscript**   | `.cps`               | Análisis léxico, sintáctico y semántico |
-| 🖥️ **Compiler IDE** | Todos los anteriores | Interfaz gráfica integrada              |
-
-Además de las herramientas de línea de comandos, el proyecto incluye una interfaz gráfica desarrollada con **Tkinter**, desde la cual es posible explorar tokens, autómatas, tablas de parsing, árboles sintácticos, errores semánticos y tablas de símbolos.
-
----
-
-# 🧭 Contenido
-
-* [Arquitectura general](#-arquitectura-general)
-* [YALex — Analizador léxico](#-yalex--generador-de-analizadores-léxicos)
-* [YAPar — Analizador sintáctico](#-yapar--generador-de-analizadores-sintácticos)
-* [Compiscript — Análisis semántico](#-compiscript--análisis-semántico)
-* [Compiler IDE](#️-compiler-ide)
-* [Instalación](#-instalación)
-* [Inicio rápido](#-inicio-rápido)
-* [Uso desde CLI](#️-uso-desde-cli)
-* [Casos de prueba](#-casos-de-prueba)
-* [Estructura del repositorio](#-estructura-del-repositorio)
-* [Tecnologías](#️-tecnologías)
-* [Autor](#-autor)
-
----
-
-# 🏗 Arquitectura general
-
-El proyecto está organizado como un conjunto de componentes independientes que pueden utilizarse desde línea de comandos o desde la interfaz gráfica.
+### Arquitectura general
 
 ```text
-                         COMPILER TOOLKIT
-                               │
-              ┌────────────────┼────────────────┐
-              │                │                │
-              ▼                ▼                ▼
-           YALex             YAPar          Compiscript
-              │                │                │
-              ▼                ▼                ▼
-        Regex Parser      Grammar Parser     ANTLR Lexer
-              │                │                │
-              ▼                ▼                ▼
-           Thompson        FIRST/FOLLOW      ANTLR Parser
-              │                │                │
-              ▼                ▼                ▼
-             AFN              LR(0)        Parse Tree
-              │                │                │
-              ▼          ┌─────┼─────┐          ▼
-        Subconjuntos      │     │     │    SemanticAnalyzer
-              │          SLR  LALR  LL(1)        │
-              ▼                                ▼
-             AFD                          SymbolTable
-              │                                │
-              ▼                                ▼
-       Lexer generado                    Semantic Errors
-              │
-              └──────────────┬─────────────────┘
-                             ▼
-                       ┌───────────┐
-                       │    GUI    │
-                       │  Tkinter  │
-                       └───────────┘
+                        COMPILER LAB
+                             |
+          +------------------+------------------+
+          |                  |                  |
+        YALex              YAPar           Compiscript
+          |                  |                  |
+      Regex parser       Gramática         Lexer/Parser
+          |               FIRST/FOLLOW         ANTLR
+    Thompson -> AFN          |                  |
+          |             LR(0), SLR,        Semántica
+      Subconjuntos       LALR, LL(1)           |
+          |                  |              Símbolos
+         AFD              Parsing              |
+          |                  |              TAC/Memoria
+     Lexer Python            |                  |
+          +------------------+------------------+
+                             |
+                      GUI (Tkinter)
+                             |
+                   SQL (módulo separado)
+                             |
+                   Lexer -> Parser -> AST
+                             |
+                       Semántica
+                             |
+                       Ejecutor
+                             |
+                    CSV + metadata.txt
+                      + índices JSON
 ```
 
-Esta separación permite estudiar individualmente cada fase del proceso de compilación y observar cómo los conceptos teóricos se traducen a implementaciones concretas.
-
----
-
-# 🔤 YALex — Generador de Analizadores Léxicos
-
-YALex genera automáticamente un **lexer ejecutable en Python** a partir de una especificación `.yal`.
-
-El proceso implementa directamente los algoritmos fundamentales utilizados para convertir expresiones regulares en autómatas finitos.
-
-## Pipeline
-
-```text
-archivo.yal
-    │
-    ▼
-YALex Parser
-    │
-    ▼
-Expresiones regulares
-    │
-    ▼
-Árboles de expresión
-    │
-    ▼
-Construcción de Thompson
-    │
-    ▼
-AFN individuales
-    │
-    ▼
-AFN combinado
-    │
-    ▼
-Construcción de subconjuntos
-    │
-    ▼
-AFD
-    │
-    ▼
-Lexer Python
-```
-
-## Características
-
-* Definiciones mediante `let`.
-* Reglas léxicas mediante `rule`.
-* Parser propio de expresiones regulares.
-* Construcción de árboles de expresión.
-* Construcción de Thompson.
-* Generación y combinación de AFN.
-* Conversión AFN → AFD mediante construcción de subconjuntos.
-* Estrategia **longest match**.
-* Prioridad según el orden de las reglas.
-* Tokens ignorados.
-* Generación automática de código Python.
-* Visualización de árboles de expresiones regulares.
-* Visualización del AFD mediante Graphviz.
-
-## Módulos principales
-
-```text
-regex/
-├── regex_node.py
-└── regex_parser.py
-
-automata/
-├── afn.py
-├── afd.py
-├── thompson.py
-└── subset.py
-
-yalex/
-├── generator.py
-├── lexer_builder.py
-├── visualizer.py
-├── yalex_parser.py
-└── yalex_reader.py
-```
-
----
-
-# 🌳 YAPar — Generador de Analizadores Sintácticos
-
-YAPar recibe una gramática `.yapar` y construye analizadores sintácticos utilizando tres estrategias diferentes:
-
-* **SLR(1)**
-* **LALR**
-* **LL(1)**
-
-Esto permite comparar directamente métodos de parsing **bottom-up** y **top-down** sobre una misma gramática.
-
-## Pipeline
-
-```text
-archivo.yapar
-      │
-      ▼
-  YAPar Parser
-      │
-      ▼
- Producciones
-      │
-      ├──────────────► FIRST / FOLLOW
-      │
-      ▼
- Autómata LR(0)
-      │
-      ├────────────┬────────────┐
-      ▼            ▼            ▼
-    SLR(1)       LALR         LL(1)
-      │            │            │
-      └────────────┼────────────┘
-                   ▼
-             Parser Engine
-                   │
-                   ▼
-             ACCEPT / REJECT
-```
-
-## Características
-
-* Lectura de gramáticas `.yapar`.
-* Declaración de terminales mediante `%token`.
-* Tokens ignorados mediante `IGNORE`.
-* Cálculo iterativo de **FIRST** y **FOLLOW**.
-* Construcción de autómatas **LR(0)**.
-* Operaciones `closure()` y `goto()`.
-* Construcción de tablas **SLR(1)**.
-* Construcción de tablas **LALR**.
-* Construcción de tablas **LL(1)**.
-* Detección y reporte de conflictos.
-* Motor Shift-Reduce para SLR/LALR.
-* Motor predictivo para LL(1).
-* Visualización de estados LR(0).
-* Reporte de aceptación o rechazo.
-
-## Módulos principales
-
-```text
-yapar/
-├── first_follow.py
-├── lr0.py
-├── slr_table.py
-├── lalr_table.py
-├── ll1_table.py
-├── parser_engine.py
-└── yapar_parser.py
-```
-
----
-
-# 🧠 Compiscript — Análisis Semántico
-
-**Compiscript** es un lenguaje basado en un subconjunto de TypeScript.
-
-A diferencia de YALex y YAPar, en esta etapa se utiliza **ANTLR4** para generar automáticamente el lexer y parser a partir de:
-
-```text
-grammars/compiscript/Compiscript.g4
-```
-
-Posteriormente, un analizador semántico propio recorre el árbol generado por ANTLR mediante el patrón **Visitor**.
-
-## Pipeline
-
-```text
-archivo.cps
-    │
-    ▼
-ANTLR Lexer
-    │
-    ├────► Errores léxicos
-    ▼
-ANTLR Parser
-    │
-    ├────► Errores sintácticos
-    ▼
-Parse Tree
-    │
-    ▼
-SemanticAnalyzer
-    │
-    ├────► Errores semánticos
-    ▼
-SymbolTable
-    │
-    ▼
-Scopes / Symbols / Types
-```
-
-En la interfaz gráfica, el análisis semántico se realiza únicamente cuando las fases léxica y sintáctica han terminado sin errores.
-
-## Sistema de tipos
-
-El analizador trabaja con tipos como:
-
-```text
-integer
-string
-boolean
-null
-void
-any
-```
-
-También maneja tipos correspondientes a clases y representaciones internas para colecciones.
-
-Entre las verificaciones realizadas se encuentran:
-
-* Asignaciones.
-* Compatibilidad de tipos.
-* Operaciones aritméticas.
-* Operaciones lógicas.
-* Comparaciones.
-* Inferencia básica.
-* Tipos de retorno.
-
-## Scopes y tabla de símbolos
-
-Los ámbitos están organizados jerárquicamente:
-
-```text
-global
-│
-├── function
-│   ├── block
-│   └── loop
-│
-└── class
-    └── method
-        └── block
-```
-
-La resolución de símbolos comienza en el scope actual y continúa hacia sus scopes padre.
-
-Esto permite representar:
-
-* Variables globales y locales.
-* Parámetros.
-* Funciones.
-* Clases.
-* Métodos.
-* Bloques.
-* Ciclos.
-* Funciones anidadas.
-* Visibilidad léxica.
-
-El analizador detecta, entre otros casos:
-
-* Variables no declaradas.
-* Redeclaraciones.
-* Parámetros duplicados.
-* Uso incorrecto de constantes.
-* Llamadas con argumentos incompatibles.
-* Uso inválido de `return`.
-* Acceso a miembros inexistentes.
-
-## Funciones
-
-Se contempla:
-
-* Declaración.
-* Parámetros.
-* Tipos de argumentos.
-* Tipo de retorno.
-* Recursividad.
-* Funciones anidadas.
-* Resolución de símbolos externos.
-
-## Control de flujo
-
-```text
-if / else
-while
-do-while
-for
-foreach
-switch / case
-break
-continue
-return
-try / catch
-```
-
-También se verifica el tipo de las condiciones y se detectan situaciones de código muerto después de determinadas instrucciones de transferencia.
-
-## Clases y objetos
-
-Compiscript incluye soporte para:
-
-* Clases.
-* Atributos.
-* Métodos.
-* Constructores.
-* Herencia.
-* `this`.
-* Instanciación mediante `new`.
-* Resolución de miembros heredados.
-* Asignaciones a variables, elementos de lista (`a[i] = x`) y atributos (`obj.campo = x`), validando tipo y que el destino sea asignable.
-* `break` fuera de un bucle o `switch`, y `continue` fuera de un bucle.
-
-## Información para generación de código
-
-Cada símbolo guarda dónde vive en memoria. Se ve en `--symbols` y en la columna de detalles de la pestaña *Símbolos* de la GUI.
-
-| Campo | Significado |
-| ----- | ----------- |
-| `storage` | `global`, `local`, `param`, `field`, `function`, `method`, `class` o `builtin` |
-| `offset` | desplazamiento en bytes dentro de su área (datos globales, registro de activación u objeto) |
-| `size` | tamaño en bytes; todo valor ocupa una palabra de 4 bytes (las cadenas, listas y objetos se guardan por referencia) |
-| `label` | etiqueta de funciones y métodos (`suma`, `Perro_hablar`, `exterior_interior`) |
-| `depth` | nivel léxico del ámbito donde se declara (global = 0); sirve para seguir los enlaces de acceso |
-
-Registro de activación, de dirección baja a alta:
-
-```text
-fp+0    valor de retorno
-fp+4    dirección de retorno
-fp+8    enlace de control (fp del llamador)
-fp+12   enlace de acceso (fp del ámbito léxico que define la función)
-fp+16   parámetros (en un método, `this` es el primero)
-        variables locales
-```
-
-Los bloques hermanos reutilizan los mismos espacios dentro del registro, y el tamaño del registro (`frame`) es el máximo que llegan a ocupar. Los atributos de una clase parten del tamaño de su clase padre, así que los heredados conservan su offset.
-
-Después de analizar, el `SemanticAnalyzer` deja anotado el árbol para las fases siguientes: `node_types` (tipo de cada nodo), `node_scopes` (scope que abre cada bloque, función, clase o bucle) y `node_symbols` (símbolo al que se resuelve un identificador, declaración, llamada o acceso a miembro).
-
-> El parser se importa siempre como `compiscript.generated.*`. Importarlo también como módulo suelto crea dos copias de las clases y los `isinstance` sobre el árbol fallan sin avisar.
-
-## Generación de código intermedio
-
-Si el programa no tiene errores, el compilador produce código de tres direcciones (TAC).
-
-```bash
-python compiscript.py programa.cps --tac       # código intermedio
-python compiscript.py programa.cps --frames    # datos globales, clases y registros de activación
-python compiscript.py programa.cps --all       # todo, incluido el árbol y la tabla de símbolos
-```
-
-En la GUI, la pestaña *Compiscript* tiene dos pestañas nuevas: *TAC CPS* y *Memoria CPS*.
-
-```text
-func fact:                             ; nivel 1, registro de 24 bytes
-    enter 24
-    if n > 1 goto L1
-    return 1
-  L1:
-    t0 = n - 1
-    param t0
-    t0 = call fact, 1
-    t0 = n * t0
-    return t0
-```
-
-Soporta expresiones aritméticas, lógicas y de comparación (con cortocircuito), asignaciones, `if`, `while`, `do-while`, `for`, `foreach`, `switch`, `break` y `continue`, funciones recursivas y anidadas con acceso al entorno, clases con herencia, y listas. `try/catch` y el uso de funciones como valores se reportan como errores de generación.
-
-* [`docs/CI.md`](docs/CI.md): el lenguaje intermedio, con ejemplos de traducción y los supuestos.
-* [`docs/arquitectura.md`](docs/arquitectura.md): organización del código, cómo ejecutarlo y cómo agregar construcciones.
-
-Batería de pruebas, que además ejecuta el TAC generado en un intérprete mínimo para comprobar que hace lo que debe:
-
-```bash
-python tests/codegen/run_tests.py
-```
-
-## Listas
-
-El análisis contempla listas y acceso mediante índices.
-
-```typescript
-[1, 2, 3]          // válido
-[1, "hola", 3]     // tipos incompatibles
-
-numeros[0]         // válido
-numeros["hola"]    // índice inválido
-numeros[0] = 5     // asignación a un elemento
-```
-
-Los tipos de lista conservan el tipo de sus elementos: `integer[]` se representa como `array:integer` y `integer[][]` como `array:array:integer`. Un `foreach` sobre una lista toma ese tipo para su variable.
-
-## Módulos principales
-
-```text
-compiscript/
-├── errors.py
-├── semantic.py
-├── symbol_table.py
-└── generated/
-    ├── CompiscriptLexer.py
-    ├── CompiscriptParser.py
-    └── CompiscriptVisitor.py
-```
-
----
-
-# 🖥️ Compiler IDE
-
-Los tres proyectos pueden utilizarse desde una interfaz gráfica integrada desarrollada con **Tkinter**.
+## Requisitos e instalación
+
+- Python **3.11** (versión indicada por el proyecto).
+- Dependencias Python definidas en `requirements.txt`: `antlr4-python3-runtime==4.13.2` y `graphviz==0.21`.
+- **Graphviz de sistema** (ejecutable `dot` disponible en `PATH`) para generar imágenes de autómatas y árboles con Graphviz. La biblioteca Python `graphviz` por sí sola no instala ese ejecutable.
+- **Tkinter** para la interfaz gráfica (normalmente incluido con Python para Windows).
+- Java, únicamente si se necesita **regenerar** código desde gramáticas ANTLR usando el archivo JAR de `tools/`; no es necesario para usar los analizadores Python ya generados.
+
+Desde PowerShell, en la raíz del repositorio:
 
 ```powershell
-python gui/app.py
-```
-
-La aplicación utiliza una interfaz oscura inspirada en herramientas de desarrollo y permite trabajar con los componentes del compilador desde un mismo entorno.
-
-## YALex / YAPar
-
-La interfaz permite inspeccionar:
-
-* Tokens.
-* Reglas YALex.
-* Resultado del parser.
-* Tabla SLR(1).
-* Tabla LALR.
-* Tabla LL(1).
-* Autómata LR(0).
-* FIRST/FOLLOW.
-* Gramática YAPar.
-
-## Compiscript
-
-El editor de Compiscript incluye:
-
-* Editor de archivos `.cps`.
-* Numeración de líneas.
-* Resaltado de sintaxis.
-* Posición de línea y columna.
-* Tokens producidos por ANTLR.
-* Árbol sintáctico gráfico.
-* Zoom y desplazamiento del árbol.
-* Errores léxicos.
-* Errores sintácticos.
-* Errores semánticos.
-* Navegación desde errores hacia el editor.
-* Tabla de símbolos organizada por scope.
-* Referencia del lenguaje.
-* Visualización de la gramática.
-
-El análisis se ejecuta en un hilo separado para mantener responsiva la interfaz durante el procesamiento.
-
----
-
-# 🚀 Instalación
-
-## Requisitos
-
-Se recomienda utilizar:
-
-* **Python 3.11**
-* **Java Runtime**
-* **Graphviz**
-* **Git**
-* **Tkinter**
-
-ANTLR 4.13.2 se encuentra incluido en `tools/antlr.jar`.
-
----
-
-## 1. Clonar el repositorio
-
-```bash
-git clone https://github.com/Emadlgg/compiler-toolkit.git
-cd compiler-toolkit
-```
-
----
-
-## 2. Crear un entorno virtual
-
-### Windows
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-Si se utiliza CMD:
-
-```cmd
-.venv\Scripts\activate.bat
-```
-
-### Linux / macOS
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
----
-
-## 3. Instalar las dependencias
-
-```bash
+python --version
 python -m pip install -r requirements.txt
 ```
 
-Las principales dependencias Python son:
-
-```text
-antlr4-python3-runtime==4.13.2
-graphviz==0.21
-```
-
----
-
-## 4. Instalar Graphviz
-
-El paquete `graphviz` de Python funciona como interfaz hacia Graphviz. Para generar las visualizaciones también es necesario instalar **Graphviz en el sistema operativo**.
-
-### Windows
-
-Instalar Graphviz y asegurarse de que su carpeta `bin` se encuentre disponible en la variable de entorno `PATH`.
-
-Para comprobar la instalación:
+Comprobar Tkinter y Graphviz:
 
 ```powershell
+python -m tkinter
 dot -V
 ```
 
-### Ubuntu / Debian
+Si `dot` no se reconoce, instala Graphviz y agrega su directorio `bin` al `PATH`. El motor SQL no necesita Graphviz para ejecutar consultas.
 
-```bash
-sudo apt install graphviz
-```
+## Inicio rápido
 
-### macOS
-
-```bash
-brew install graphviz
-```
-
----
-
-## 5. Verificar ANTLR
-
-El proyecto incluye:
-
-```text
-tools/antlr.jar
-```
-
-correspondiente a **ANTLR 4.13.2**.
-
-Puede comprobarse mediante:
-
-```bash
-java -jar tools/antlr.jar
-```
-
-La salida debe comenzar con:
-
-```text
-ANTLR Parser Generator  Version 4.13.2
-```
-
-### Regeneración de Compiscript
-
-> [!IMPORTANT]
-> Los archivos generados ya se encuentran incluidos en el repositorio.
-> Este paso **no es necesario para ejecutar el proyecto**.
-
-Solo debe realizarse si se modifica:
-
-```text
-grammars/compiscript/Compiscript.g4
-```
-
-Desde la raíz:
-
-```powershell
-java -jar tools/antlr.jar -Dlanguage=Python3 -visitor -Xexact-output-dir -o compiscript\generated grammars\compiscript\Compiscript.g4
-```
-
-La opción `-Xexact-output-dir` hace que los archivos sean escritos directamente en `compiscript/generated/`.
-
----
-
-# ⚡ Inicio rápido
-
-Una vez instaladas las dependencias, la forma más rápida de explorar el proyecto es ejecutar la interfaz gráfica:
+Abrir la aplicación gráfica:
 
 ```powershell
 python gui/app.py
 ```
 
-También pueden utilizarse individualmente los tres componentes:
+Ejemplos de ejecución por consola:
 
 ```powershell
-# Generador léxico
+python yalex.py grammars/java/java.yal -o lexer_generado.py
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --method slr
+python compiscript.py examples/compiscript/example.cps --all
+python sql.py examples/sql/query.sql --tokens --tree --ast
+python ejecutar_sql.py examples/sql/universidad.sql --db database_demo
+```
+
+**Atención:** la última instrucción **ejecuta** el SQL y puede crear o modificar archivos. Usa una carpeta de pruebas y verifica antes que el script no cree tablas ya existentes. Algunos ejemplos requieren un esquema o datos previos; consulta su contenido antes de ejecutarlos.
+
+## Interfaz gráfica
+
+La aplicación `gui/app.py` incluye cinco áreas de trabajo: **YALex**, **YAPar**, **Entrada**, **Compiscript** y **SQL**. La barra lateral es contextual: al cambiar de herramienta solo se muestran los archivos, controles y acciones pertinentes. El contenido de cada editor se conserva al cambiar de pestaña.
+
+| Área | Archivos/controles | Acciones |
+|---|---|---|
+| YALex | LEXER | SAVE |
+| YAPar | LEXER, GRAMMAR, INPUT; SLR(1), LALR, LL(1), pasos | RUN, RUN ALL, SAVE |
+| Entrada | LEXER, GRAMMAR, INPUT; opciones de parser | RUN, RUN ALL, SAVE |
+| Compiscript | CPS | COMPILE CPS, TEST CPS, SAVE |
+| SQL | SQL, DATABASE | ANALYZE SQL, EXECUTE SQL, SAVE |
+
+### Paneles y resultados
+
+- **YALex:** tokens y reglas léxicas.
+- **YAPar / Entrada:** resultado, LR(0), FIRST/FOLLOW, SLR(1), LALR, LL(1) y gramática.
+- **Compiscript:** tokens, árbol sintáctico, errores por fase, símbolos, TAC, memoria, pruebas y referencias del lenguaje.
+- **SQL:** tokens, árbol sintáctico, AST, esquema, errores léxicos/sintácticos/semánticos y resultados en una tabla `ttk.Treeview` con selector de consultas.
+
+**ANALYZE SQL** solo analiza y valida. **EXECUTE SQL** solicita confirmación y ejecuta sentencias sobre la carpeta DATABASE seleccionada. La ejecución puede modificar datos persistentes. Los botones **SAVE** conservan el comportamiento de guardado de archivos asociados a las herramientas; revisa las rutas seleccionadas antes de utilizarlos.
+
+## YALex: generador léxico
+
+YALex lee especificaciones `.yal`, interpreta expresiones regulares y genera analizadores léxicos ejecutables en Python.
+
+**Proceso:** especificación → parser de regex → construcción de Thompson → AFN → construcción de subconjuntos → AFD → lexer generado.
+
+Características implementadas: definiciones `let`, reglas `rule`, resolución de referencias, combinación de autómatas, estrategia de coincidencia más larga (*longest match*), prioridad de reglas, tokens ignorados y visualizaciones con Graphviz.
+
+```powershell
+# Generar un lexer
+python yalex.py grammars/java/java.yal -o lexer_generado.py
+
+# Generar lexer y gráficos
+python yalex.py grammars/java/java.yal -o lexer_generado.py --all
+
+# Generar y tokenizar texto directamente
+python yalex.py grammars/java/java.yal -run "int x = 10;"
+
+# Consultar opciones
 python yalex.py --help
+```
 
-# Generador sintáctico
+Módulos: `regex/`, `automata/` y `yalex/`. Las imágenes generadas requieren el ejecutable de Graphviz. Las rutas de salida de ejemplos son ilustrativas y pueden crear archivos en la carpeta de trabajo.
+
+## YAPar: generador sintáctico
+
+YAPar recibe gramáticas `.yapar` y, junto con un lexer YALex, permite analizar cadenas con distintos algoritmos:
+
+- **SLR(1):** autómata LR(0), conjuntos FOLLOW y tabla ACTION/GOTO.
+- **LALR:** construcción de tabla LALR y detección de conflictos.
+- **LL(1):** tabla predictiva a partir de FIRST/FOLLOW.
+
+Incluye cálculo de FIRST/FOLLOW, construcción de estados LR(0), tablas, conflictos, motores de análisis y opción para mostrar pasos.
+
+```powershell
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --method slr
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --method lalr
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --method ll1
+python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --all --steps
 python yapar.py --help
-
-# Compiscript
-python compiscript.py --help
 ```
 
----
-
-# ⌨️ Uso desde CLI
-
-Todos los comandos deben ejecutarse desde la **raíz del repositorio**.
-
-## 🔤 YALex
-
-### Java
-
-Generar el lexer:
-
-```powershell
-python yalex.py grammars/java/java.yal -o java_lexer.py
-```
-
-Generar también las visualizaciones:
-
-```powershell
-python yalex.py grammars/java/java.yal -o java_lexer.py --all
-```
-
-Después puede ejecutarse el lexer generado:
-
-```powershell
-python java_lexer.py examples/java/input_java.txt --verbose
-```
-
-### SQL
-
-```powershell
-python yalex.py grammars/sql/sql.yal -o sql_lexer.py --all
-python sql_lexer.py examples/sql/query.sql --verbose
-```
-
-### Opciones de visualización
-
-```text
---tree       Árboles de expresiones regulares
---afd        Grafo del AFD
---all        Todas las visualizaciones
-```
-
----
-
-## 🌳 YAPar
-
-### Java — SLR(1)
-
-```powershell
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt
-```
-
-### Java — LALR
-
-```powershell
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --method lalr
-```
-
-### Java — LL(1)
-
-```powershell
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --method ll1
-```
-
-### Comparar los tres métodos
-
-```powershell
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/input_java.txt --all
-```
-
-### SQL
-
-```powershell
-python yapar.py grammars/sql/sql_grammar.yapar -l grammars/sql/sql.yal -i examples/sql/query.sql --all
-```
-
----
-
-## 🧠 Compiscript
-
-### Análisis estándar
-
-```powershell
-python compiscript.py archivo.cps
-```
-
-### Mostrar árbol sintáctico
-
-```powershell
-python compiscript.py archivo.cps --tree
-```
-
-### Mostrar tabla de símbolos
-
-```powershell
-python compiscript.py archivo.cps --symbols
-```
-
-### Mostrar toda la información
-
-```powershell
-python compiscript.py archivo.cps --all
-```
-
-Por ejemplo:
-
-```powershell
-python compiscript.py tests/compiscript/tipos/ok_tipos.cps --all
-```
-
-Una ejecución correcta produce, entre otros resultados:
-
-```text
-✓ Sin errores semánticos
-
-══ TABLA DE SÍMBOLOS ══
-
-┌─ global (global)
-│  function print(value:any) → void
-│  ...
-└─
-```
-
----
-
-# 🧪 Casos de prueba
-
-## Java
-
-```text
-grammars/java/java.yal
-grammars/java/java_grammar.yapar
-examples/java/input_java.txt
-```
-
-La gramática utilizada contempla construcciones como clases, métodos, variables, expresiones, condicionales, ciclos, retornos, arreglos, llamadas y creación de objetos.
-
-Java también sirve para observar las diferencias entre las estrategias de parsing, particularmente cuando una gramática presenta características que dificultan su utilización mediante LL(1).
-
----
-
-## SQL
-
-```text
-grammars/sql/sql.yal
-grammars/sql/sql_grammar.yapar
-examples/sql/query.sql
-```
-
-El subset utilizado contempla instrucciones y elementos como:
-
-`SELECT`, `FROM`, `WHERE`, `INSERT`, `INTO`, `VALUES`, `UPDATE`, `SET`, `DELETE`, `AND`, `OR`, `NOT`, `NULL`, identificadores, strings, enteros, floats y comparaciones.
-
----
+La aceptación de una cadena depende de que la gramática y el lexer sean compatibles. La detección de conflictos no implica que cualquier gramática sea válida para los tres métodos.
 
 ## Compiscript
 
-Los casos de prueba funcionales están organizados por categoría:
+Compiscript usa un lexer y parser generados por ANTLR. Sobre el árbol de análisis realiza comprobaciones semánticas y, cuando el programa es válido y las construcciones están soportadas, genera **código intermedio de tres direcciones (TAC)** y un reporte de memoria.
 
 ```text
-tests/compiscript/
-├── tipos/
-├── ambitos/
-├── funciones/
-├── control_flujo/
-├── clases/
-└── extra/
+archivo .cps
+   -> ANTLR Lexer / Parser
+   -> árbol sintáctico
+   -> análisis semántico
+   -> tabla de símbolos / ámbitos
+   -> generación TAC
+   -> reporte de memoria
 ```
 
-### Caso válido
+Características: detección de errores léxicos, sintácticos y semánticos; ámbitos anidados; tipos y símbolos; funciones y clases; código intermedio; temporales; representación de datos globales, clases y registros de activación.
 
 ```powershell
-python compiscript.py tests/compiscript/tipos/ok_tipos.cps --all
+python compiscript.py examples/compiscript/example.cps
+python compiscript.py examples/compiscript/example.cps --tree
+python compiscript.py examples/compiscript/example.cps --symbols
+python compiscript.py examples/compiscript/example.cps --tac
+python compiscript.py examples/compiscript/example.cps --frames
+python compiscript.py examples/compiscript/example.cps --all
+python compiscript.py --help
 ```
 
-### Caso con errores
+**Nota:** el análisis semántico y la generación de TAC no son equivalentes a ejecutar directamente el programa Compiscript como una aplicación independiente. La batería de pruebas de código intermedio incluye un intérprete de TAC para verificar salidas esperadas. Algunas construcciones sintácticamente válidas pueden no estar soportadas por el generador.
 
-```powershell
-python compiscript.py tests/compiscript/tipos/error_tipos.cps --all
-```
+Módulos clave: `compiscript/semantic.py`, `symbol_table.py`, `codegen.py`, `tac.py`, `temps.py` y `activation_record.py`. Gramática: `grammars/compiscript/Compiscript.g4`.
 
-Los casos adicionales verifican:
+## Intérprete SQL con almacenamiento en archivos
 
-* Constantes.
-* Código muerto.
-* Closures.
-* Atributos.
-* Métodos.
-* Constructores.
-* Listas.
-* Índices.
+Este componente implementa un intérprete SQL **sin SQLite, MySQL, PostgreSQL ni otro DBMS** para almacenar o ejecutar consultas. Utiliza directorios, archivos CSV, `metadata.txt` y archivos JSON para índices.
 
----
+**Proceso:** SQL → lexer → parser → AST → análisis semántico → motor de ejecución → archivos → resultados.
 
-# 📁 Estructura del repositorio
+### Operaciones soportadas
+
+| Categoría | Funcionalidades |
+|---|---|
+| Definición | `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `DROP INDEX` |
+| Manipulación | `INSERT`, `UPDATE`, `DELETE` |
+| Consulta | `SELECT`, `FROM`, `WHERE`, `ORDER BY`, `INNER JOIN` |
+| Condiciones | `AND`, `OR`, `NOT`, `IN`, `NOT IN`, `EXISTS`, `NOT EXISTS`, comparaciones, `IS NULL` |
+| Agregaciones | `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `GROUP BY`, `HAVING` |
+| Subconsultas | `IN`, `NOT IN`, `EXISTS`, `NOT EXISTS` y escalares en condiciones |
+| Tipos | `INT`, `FLOAT`, `VARCHAR(n)`, `BOOLEAN`, `DATE` (`YYYY-MM-DD`) |
+| Restricciones | `PRIMARY KEY`, `UNIQUE`, `NOT NULL` |
+
+### Archivos de almacenamiento
 
 ```text
-compiler-toolkit/
-│
-├── automata/                    # AFN, AFD, Thompson y subconjuntos
-│   ├── afd.py
-│   ├── afn.py
-│   ├── subset.py
-│   └── thompson.py
-│
-├── regex/                       # Parser y representación de regex
-│   ├── regex_node.py
-│   └── regex_parser.py
-│
-├── yalex/                       # Generador léxico
-│   ├── generator.py
-│   ├── lexer_builder.py
-│   ├── visualizer.py
-│   ├── yalex_parser.py
-│   └── yalex_reader.py
-│
-├── yapar/                       # Generador sintáctico
-│   ├── first_follow.py
-│   ├── lalr_table.py
-│   ├── ll1_table.py
-│   ├── lr0.py
-│   ├── parser_engine.py
-│   ├── slr_table.py
-│   └── yapar_parser.py
-│
-├── compiscript/                 # Analizador semántico
-│   ├── errors.py
-│   ├── semantic.py
-│   ├── symbol_table.py
-│   └── generated/               # Lexer/parser generados por ANTLR
-│
+database_demo/
+├── metadata.txt
+├── estudiantes.csv
+├── inscripciones.csv
+└── indexes/
+    └── idx_edad.json
+```
+
+`metadata.txt` describe tablas, columnas, tipos, restricciones e índices. Los CSV guardan registros y los JSON mantienen correspondencias entre valores indexados y posiciones de filas. Los índices se reconstruyen al modificar los registros correspondientes.
+
+### Análisis SQL sin ejecutar
+
+`sql.py` muestra tokens, árbol sintáctico, AST y resultados del análisis semántico. **No modifica registros.**
+
+```powershell
+python sql.py examples/sql/query.sql --tokens --tree --ast
+python sql.py examples/sql/query.sql --db database_demo --schema
+python sql.py -e "SELECT nombre FROM estudiantes WHERE edad >= 18;" --tree
+python sql.py --help
+```
+
+### Ejecución SQL real
+
+`ejecutar_sql.py` procesa las sentencias y escribe resultados en archivos. Ejecuta en una base de datos de prueba, por ejemplo:
+
+```powershell
+python ejecutar_sql.py examples/sql/universidad.sql --db database_demo
+```
+
+Si la organización del proyecto movió los ejemplos de demostración a `examples/sql/demos/`, utiliza la ruta correspondiente:
+
+```powershell
+python ejecutar_sql.py examples/sql/demos/consultas_avanzadas.sql --db database_avanzadas_nueva
+```
+
+**Ejemplo autocontenido** (guardar como `ejemplo_personal.sql`):
+
+```sql
+CREATE TABLE estudiantes (
+    id INT PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL,
+    edad INT
+);
+INSERT INTO estudiantes VALUES (1, 'Ana', 20);
+INSERT INTO estudiantes VALUES (2, 'Luis', 22);
+SELECT id, nombre FROM estudiantes WHERE edad >= 18 ORDER BY id;
+UPDATE estudiantes SET edad = 23 WHERE id = 1;
+SELECT * FROM estudiantes ORDER BY id;
+```
+
+```powershell
+python ejecutar_sql.py ejemplo_personal.sql --db database_personal
+```
+
+No ejecutes repetidamente scripts que incluyen `CREATE TABLE` sobre la misma carpeta, pues una tabla existente produce un error semántico. Para repetir desde cero, usa una carpeta nueva o elimina **solo una base de prueba** que ya no necesites.
+
+### Índices y subconsultas
+
+Los índices se almacenan como archivos JSON y se mantienen al ejecutar `INSERT`, `UPDATE` y `DELETE`. El optimizador de consultas usa índices para **igualdades sencillas** de la forma `WHERE columna = literal`; no todas las expresiones complejas usan índices. El intérprete permite subconsultas correlacionadas y comprueba errores como subconsultas escalares con más de una fila.
+
+### `NULL` y cadenas vacías
+
+El almacenamiento actual distingue `NULL` de `''` (cadena vacía). En CSV antiguos creados antes de la corrección, las celdas vacías pueden ser ambiguas; haz respaldo antes de reutilizar datos anteriores.
+
+## Pruebas
+
+Ejecutar desde la raíz del repositorio:
+
+```powershell
+# Lexer, parser, AST y semántica SQL
+python tests/sql/run_tests.py -v
+
+# Generación de TAC y casos Compiscript
+python tests/codegen/run_tests.py -v
+
+# Auditoría funcional del intérprete SQL
+python auditar_sql.py
+```
+
+En la última auditoría compartida durante el desarrollo, `auditar_sql.py` completó **10 pruebas sin fallos** (creación/consulta, persistencia, UPDATE/DELETE, restricciones, errores, índices, subconsultas y distinción de NULL frente a cadena vacía). Ese resultado corresponde al entorno donde se ejecutó; después de mover archivos o actualizar código, vuelve a correr las pruebas.
+
+Las pruebas del intérprete SQL pueden usar carpetas temporales. No ejecutes demostraciones destructivas sobre bases de datos importantes. En la interfaz, **TEST CPS** ejecuta la batería de código intermedio de Compiscript.
+
+## Estructura del proyecto
+
+Estructura lógica de la versión organizada; las carpetas `docs/` y `examples/` pueden contener subcarpetas adicionales, y las bases de datos de prueba se generan al ejecutar los ejemplos:
+
+```text
+proyecto/
+├── automata/              # AFN, AFD, Thompson, subconjuntos
+├── regex/                 # Parser y nodos de expresiones regulares
+├── yalex/                 # Lectura y generación de analizadores léxicos
+├── yapar/                 # Gramáticas, FIRST/FOLLOW, LR, LL y parsers
+├── compiscript/           # Semántica, símbolos, TAC y memoria
+│   └── generated/         # Lexer y parser generados por ANTLR
+├── sqlengine/             # Frontend, AST, semántica, motor y almacenamiento SQL
+│   └── generated/         # Lexer y parser SQL generados por ANTLR
 ├── gui/
-│   └── app.py                   # IDE gráfico
-│
+│   └── app.py             # Interfaz gráfica integrada
 ├── grammars/
 │   ├── java/
-│   ├── sql/
-│   └── compiscript/
-│       └── Compiscript.g4
-│
+│   ├── compiscript/
+│   └── sql/
 ├── examples/
+│   ├── java/
+│   ├── compiscript/
+│   └── sql/
 ├── tests/
-│   └── compiscript/
-│
-├── tools/
-│   └── antlr.jar                # ANTLR 4.13.2
-│
-├── yalex.py                     # CLI YALex
-├── yapar.py                     # CLI YAPar
-├── compiscript.py               # CLI Compiscript
+│   ├── codegen/
+│   ├── compiscript/
+│   └── sql/
+├── docs/                  # Arquitectura, TAC y documentación SQL
+├── tools/                 # JAR ANTLR
+├── database*/             # Bases de datos de ejemplo/prueba (generadas)
+├── yalex.py               # CLI léxico
+├── yapar.py               # CLI sintáctico
+├── compiscript.py         # CLI Compiscript
+├── sql.py                 # CLI de análisis SQL (no ejecuta)
+├── ejecutar_sql.py        # CLI de ejecución SQL (modifica archivos)
+├── auditar_sql.py         # Auditoría funcional SQL
 ├── requirements.txt
 └── README.md
 ```
 
----
+### Responsabilidades del motor SQL
 
-# 🛠️ Tecnologías
+| Módulo | Responsabilidad |
+|---|---|
+| `frontend.py` | Análisis léxico y sintáctico |
+| `ast_builder.py`, `ast.py` | Construcción y representación del AST |
+| `semantic.py`, `types.py` | Tipos, nombres, ámbitos y errores semánticos |
+| `catalog.py`, `metadata.py` | Esquemas y metadatos |
+| `storage.py` | Lectura/escritura de tablas CSV |
+| `evaluator.py` | Evaluación de expresiones y conversión de tipos |
+| `query_engine.py` | Consultas, JOIN, agregaciones, UPDATE y DELETE |
+| `indexes.py` | Índices persistentes |
+| `executor.py` | Coordinación de análisis y ejecución |
 
-| Tecnología       | Uso                                  |
-| ---------------- | ------------------------------------ |
-| **Python 3.11**  | Implementación principal             |
-| **ANTLR 4.13.2** | Lexer y parser de Compiscript        |
-| **Graphviz**     | Visualización de autómatas y árboles |
-| **Tkinter**      | Interfaz gráfica                     |
-| **Java Runtime** | Ejecución del generador ANTLR        |
-| **Git / GitHub** | Control de versiones                 |
+## Limitaciones y precauciones
 
----
+1. **Ejecución SQL sin transacciones completas:** un script puede modificar archivos antes de encontrar un error posterior. Usa bases de prueba y realiza respaldos.
+2. **Índices:** la optimización está enfocada en igualdades simples, no en todos los predicados o combinaciones posibles.
+3. **Compatibilidad de datos antiguos:** el formato CSV anterior a la corrección de `NULL` no permitía distinguir siempre una cadena vacía de un valor nulo.
+4. **Gramáticas y lenguajes:** los analizadores detectan conflictos y errores; no todas las gramáticas son aptas para SLR, LALR y LL(1).
+5. **Compiscript:** ciertas construcciones aceptadas por el parser pueden no tener generación TAC completa; consulta los errores del generador y la documentación de código intermedio.
+6. **Archivos generados:** los comandos pueden producir lexers, imágenes, CSV y JSON. No confundas estos artefactos con los archivos fuente del proyecto.
+7. **Versiones:** utiliza el runtime ANTLR 4.13.2 indicado en `requirements.txt` para evitar incompatibilidades con el código generado.
 
-# 📚 Conceptos implementados
+## Documentación complementaria
 
-El proyecto pone en práctica conceptos fundamentales de construcción de compiladores:
-
-```text
-Expresiones regulares
-        │
-        ▼
-Construcción de Thompson
-        │
-        ▼
-       AFN
-        │
-        ▼
-Construcción de subconjuntos
-        │
-        ▼
-       AFD
-
-FIRST / FOLLOW
-Closure / GOTO
-LR(0)
-SLR(1)
-LALR
-LL(1)
-
-Árboles sintácticos
-Visitors
-Scopes
-Tablas de símbolos
-Sistemas de tipos
-Análisis semántico
-```
+- `docs/arquitectura.md`: arquitectura del análisis semántico y generación de TAC de Compiscript.
+- `docs/CI.md`: convenciones e instrucciones del código intermedio.
+- `docs/sql_ast.md`: representación del AST SQL.
+- `docs/sql_semantico.md`: análisis semántico SQL.
+- `python yalex.py --help`, `python yapar.py --help`, `python compiscript.py --help` y `python sql.py --help`: opciones de línea de comandos.
 
 ---
 
-# ✅ Estado del proyecto
-
-* [x] Generador léxico YALex
-* [x] Construcción AFN/AFD
-* [x] Construcción de Thompson
-* [x] Generación automática de lexers
-* [x] Visualización de árboles y AFD
-* [x] Generador sintáctico YAPar
-* [x] FIRST/FOLLOW
-* [x] Autómata LR(0)
-* [x] SLR(1)
-* [x] LALR
-* [x] LL(1)
-* [x] Analizador de Compiscript con ANTLR4
-* [x] Análisis semántico
-* [x] Scopes y tabla de símbolos
-* [x] Casos de prueba funcionales
-* [x] Integración de los tres proyectos en GUI
-* [x] Árbol sintáctico gráfico
-* [x] Visualización de errores por fase
-* [x] Tabla de símbolos gráfica
-
----
-
-# 👨‍💻 Autor
-
-**Osman Emanuel de León García — 23428**
-
-Ingeniería en Ciencias de la Computación
-Universidad del Valle de Guatemala
-
-**Construcción de Compiladores — 2026**
-
----
-
-> Este proyecto fue desarrollado con fines académicos como implementación práctica de las principales etapas del front-end de un compilador.
+**Compiler Lab** es un proyecto educativo orientado a implementar y visualizar las etapas de construcción de compiladores, así como un intérprete SQL con almacenamiento propio basado en archivos.

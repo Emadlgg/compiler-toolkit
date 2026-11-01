@@ -1,0 +1,1 @@
+DELETE t WHERE id = 1;

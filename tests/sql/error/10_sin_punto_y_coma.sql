@@ -1,0 +1,2 @@
+SELECT a FROM t
+SELECT b FROM u;

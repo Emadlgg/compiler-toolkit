@@ -1,0 +1,5 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:13 La tabla 'estudiantes' ya existe
+semántico 3:24 La columna 'A' está repetida en CREATE TABLE (ya se definió en la línea 3)
+semántico 4:36 Una tabla solo puede tener una columna PRIMARY KEY
+semántico 5:19 VARCHAR necesita un largo mayor que cero

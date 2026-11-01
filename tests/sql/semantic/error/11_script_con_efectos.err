@@ -1,0 +1,5 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 3:25 El texto tiene 4 caracteres y la columna 'b' admite 3
+semántico 5:14 La tabla 't' no existe
+semántico 6:21 La tabla 't' no existe
+semántico 7:11 El índice 'idx' no existe

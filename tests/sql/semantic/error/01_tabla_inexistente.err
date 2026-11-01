@@ -1,0 +1,8 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:14 La tabla 'estudiantez' no existe. ¿Quisiste decir 'estudiantes'?
+semántico 3:12 La tabla 'nada' no existe
+semántico 4:7 La tabla 'nada' no existe
+semántico 5:12 La tabla 'nada' no existe
+semántico 6:11 La tabla 'nada' no existe
+semántico 7:18 La tabla 'nada' no existe
+semántico 8:39 La tabla 'cursoz' no existe. ¿Quisiste decir 'cursos'?

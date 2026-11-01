@@ -1,0 +1,7 @@
+CREATE TABLE t (a INT, b VARCHAR(3));
+CREATE INDEX idx ON t (a);
+INSERT INTO t VALUES (1, 'abcd');
+DROP TABLE t;
+SELECT a FROM t;
+CREATE INDEX idx2 ON t (a);
+DROP INDEX idx;

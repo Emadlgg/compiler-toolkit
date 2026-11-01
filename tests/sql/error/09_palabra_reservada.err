@@ -1,0 +1,2 @@
+# DATE es palabra reservada: el error apunta a donde empieza y lo explica
+sintáctico 1:7 ¿Usaste la palabra reservada 'date' como nombre?

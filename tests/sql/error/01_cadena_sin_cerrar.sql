@@ -1,0 +1,1 @@
+SELECT 'hola FROM t;

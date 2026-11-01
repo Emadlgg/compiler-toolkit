@@ -1,0 +1,9 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:7 La columna 'nmbre' no existe en la tabla 'estudiantes'. ¿Quisiste decir 'nombre'?
+semántico 3:37 La columna 'edd' no existe en la tabla 'estudiantes'. ¿Quisiste decir 'edad'?
+semántico 4:9 La columna 'nombr' no existe en la tabla 'e'. ¿Quisiste decir 'nombre'?
+semántico 5:23 La columna 'edda' no existe en la tabla 'estudiantes'. ¿Quisiste decir 'edad'?
+semántico 6:29 La columna 'nmbre' no existe en la tabla 'estudiantes'
+semántico 7:32 La columna 'edda' no existe en la tabla 'estudiantes'
+semántico 8:40 La columna 'promedioo' no existe en la tabla 'estudiantes'. ¿Quisiste decir 'promedio'?
+semántico 9:7 La tabla o alias 'x' no existe en esta consulta

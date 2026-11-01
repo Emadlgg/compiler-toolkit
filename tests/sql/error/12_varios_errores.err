@@ -1,0 +1,3 @@
+# el parser se recupera y sigue: se reportan los dos errores
+sintáctico 1:23 Se encontró ')' pero se esperaba un nombre
+sintáctico 2:0 Después de DROP se esperaba TABLE o INDEX

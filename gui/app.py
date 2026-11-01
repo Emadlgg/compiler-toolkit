@@ -23,6 +23,14 @@ from compiscript.generated.CompiscriptLexer import CompiscriptLexer
 from compiscript.generated.CompiscriptParser import CompiscriptParser
 from compiscript.semantic import SemanticAnalyzer
 from compiscript.codegen import CodeGenerator
+from sqlengine.frontend import parse as sql_parse, parse_tree_item as sql_parse_tree_item
+from sqlengine.ast_builder import build_ast as sql_build_ast
+from sqlengine.ast import to_tree as sql_ast_to_tree
+from sqlengine.catalog import Catalog as SqlCatalog
+from sqlengine.metadata import load_catalog as sql_load_catalog, format_metadata as sql_format_metadata, MetadataError
+from sqlengine.semantic import analyze_script as sql_analyze_script
+from sqlengine.executor import execute as sql_execute
+from sqlengine.storage import StorageError
 
 
 class CPSAnalysisErrorListener(ErrorListener):
@@ -52,6 +60,16 @@ def load_lexer_module(path):
     spec.loader.exec_module(mod)
     return mod
 
+class _Located:
+    """Un mensaje con su ubicación; su texto es solo el mensaje (la tabla ya muestra línea y columna)."""
+
+    def __init__(self, line, column, message):
+        self.line, self.column, self.message = line, column, message
+
+    def __str__(self):
+        return self.message
+
+
 class IDE(tk.Tk):
 
     def __init__(self):
@@ -64,6 +82,8 @@ class IDE(tk.Tk):
         self.yapar_path = tk.StringVar()
         self.inp_path = tk.StringVar()
         self.cps_path = tk.StringVar()
+        self.sql_path = tk.StringVar()
+        self.db_path = tk.StringVar()
         self.method = tk.StringVar(value='slr')
         self.show_steps = tk.BooleanVar(value=False)
         self._build()
@@ -88,31 +108,39 @@ class IDE(tk.Tk):
         titles = tk.Frame(brand, bg=C['bg1'])
         titles.pack(side=tk.LEFT, padx=(11, 0))
         tk.Label(titles, text='COMPILER LAB', bg=C['bg1'], fg=C['text'], font=('Consolas', 10, 'bold'), anchor='w').pack(fill=tk.X)
-        tk.Label(titles, text='YALex · YAPar · CPS', bg=C['bg1'], fg=C['green'], font=('Consolas', 7), anchor='w').pack(fill=tk.X, pady=(3, 0))
+        tk.Label(titles, text='YALex · YAPar · CPS · SQL', bg=C['bg1'], fg=C['green'], font=('Consolas', 7), anchor='w').pack(fill=tk.X, pady=(3, 0))
         self._divider(sb)
-        self._sb_section(sb, 'WORKSPACE')
-        for label, var, exts in [('LEXER', self.yal_path, [('YALex', '*.yal'), ('All', '*.*')]), ('GRAMMAR', self.yapar_path, [('YAPar', '*.yapar'), ('All', '*.*')]), ('INPUT', self.inp_path, [('Text', '*.txt'), ('All', '*.*')]), ('CPS', self.cps_path, [('Compiscript', '*.cps'), ('All', '*.*')])]:
-            self._file_btn(sb, label, var, exts)
-        self._divider(sb)
-        self._sb_section(sb, 'PARSER')
+        self._sidebar_sections = {}
+        self._sidebar_files = {}
+        self._sidebar_actions = {}
+        self._sidebar_sections['workspace_title'] = self._sb_section(sb, 'WORKSPACE')
+        for label, var, exts in [('LEXER', self.yal_path, [('YALex', '*.yal'), ('All', '*.*')]), ('GRAMMAR', self.yapar_path, [('YAPar', '*.yapar'), ('All', '*.*')]), ('INPUT', self.inp_path, [('Text', '*.txt'), ('All', '*.*')]), ('CPS', self.cps_path, [('Compiscript', '*.cps'), ('All', '*.*')]), ('SQL', self.sql_path, [('SQL', '*.sql'), ('All', '*.*')])]:
+            self._sidebar_files[label] = self._file_btn(sb, label, var, exts)
+        self._sidebar_files['DATABASE'] = self._dir_btn(sb, 'DATABASE', self.db_path)
+        self._sidebar_sections['parser_divider'] = self._divider(sb)
+        self._sidebar_sections['parser_title'] = self._sb_section(sb, 'PARSER')
         parser_box = tk.Frame(sb, bg=C['bg1'])
         parser_box.pack(fill=tk.X, padx=14, pady=(2, 6))
+        self._sidebar_sections['parser_box'] = parser_box
         for m, col in [('SLR(1)', C['green']), ('LALR', C['blue']), ('LL(1)', C['purple'])]:
             val = {'slr(1)': 'slr', 'lalr': 'lalr', 'll(1)': 'll1'}[m.lower()]
             rb = tk.Radiobutton(parser_box, text=m, variable=self.method, value=val, bg=C['bg1'], fg=col, selectcolor=C['bg3'], activebackground=C['bg1'], activeforeground=col, font=('Consolas', 9, 'bold'), indicatoron=True, anchor='w', pady=4)
             rb.pack(fill=tk.X, padx=7)
         tk.Checkbutton(parser_box, text='show parser steps', variable=self.show_steps, bg=C['bg1'], fg=C['text3'], selectcolor=C['bg3'], activebackground=C['bg1'], activeforeground=C['text2'], font=('Consolas', 8), anchor='w', pady=4).pack(fill=tk.X, padx=7)
-        self._divider(sb)
-        self._sb_section(sb, 'ACTIONS')
-        self._action_btn(sb, '▶   RUN', self._run, C['green'], primary=True)
-        self._action_btn(sb, '⚡  RUN ALL', self._run_all, C['amber'])
-        self._action_btn(sb, '◆   COMPILE CPS', self._run_compiscript, C['purple'])
-        self._action_btn(sb, '✔   TEST CPS', self._run_cps_tests, C['green'])
-        self._action_btn(sb, '▣   SAVE', self._save, C['blue'])
-        self._divider(sb)
-        self._sb_section(sb, 'SESSION')
+        self._sidebar_sections['actions_divider'] = self._divider(sb)
+        self._sidebar_sections['actions_title'] = self._sb_section(sb, 'ACTIONS')
+        self._sidebar_actions['RUN'] = self._action_btn(sb, '▶   RUN', self._run, C['green'], primary=True)
+        self._sidebar_actions['RUN ALL'] = self._action_btn(sb, '⚡  RUN ALL', self._run_all, C['amber'])
+        self._sidebar_actions['COMPILE CPS'] = self._action_btn(sb, '◆   COMPILE CPS', self._run_compiscript, C['purple'])
+        self._sidebar_actions['ANALYZE SQL'] = self._action_btn(sb, '◇   ANALYZE SQL', self._run_sql, C['blue'])
+        self._sidebar_actions['EXECUTE SQL'] = self._action_btn(sb, '▶   EXECUTE SQL', self._execute_sql, C['green'])
+        self._sidebar_actions['TEST CPS'] = self._action_btn(sb, '✔   TEST CPS', self._run_cps_tests, C['green'])
+        self._sidebar_actions['SAVE'] = self._action_btn(sb, '▣   SAVE', self._save, C['blue'])
+        self._sidebar_sections['session_divider'] = self._divider(sb)
+        self._sidebar_sections['session_title'] = self._sb_section(sb, 'SESSION')
         status = tk.Frame(sb, bg=C['bg2'], highlightbackground=C['border'], highlightthickness=1)
         status.pack(fill=tk.X, padx=14, pady=(2, 8))
+        self._sidebar_sections['session_box'] = status
         status_top = tk.Frame(status, bg=C['bg2'])
         status_top.pack(fill=tk.X, padx=10, pady=(9, 5))
         self.status_icon = tk.Label(status_top, text='●', bg=C['bg2'], fg=C['text3'], font=('Consolas', 12))
@@ -132,10 +160,14 @@ class IDE(tk.Tk):
             tk.Label(card, text=label, bg=C['bg3'], fg=C['text3'], font=('Consolas', 6)).pack(pady=(0, 6))
 
     def _sb_section(self, parent, title):
-        tk.Label(parent, text=title, bg=C['bg1'], fg=C['text3'], font=('Consolas', 7, 'bold'), anchor='w', padx=16, pady=5).pack(fill=tk.X)
+        widget = tk.Label(parent, text=title, bg=C['bg1'], fg=C['text3'], font=('Consolas', 7, 'bold'), anchor='w', padx=16, pady=5)
+        widget.pack(fill=tk.X)
+        return widget
 
     def _divider(self, parent):
-        tk.Frame(parent, bg=C['border'], height=1).pack(fill=tk.X, pady=7)
+        widget = tk.Frame(parent, bg=C['border'], height=1)
+        widget.pack(fill=tk.X, pady=7)
+        return widget
 
     def _file_btn(self, parent, label, var, exts):
         row = tk.Frame(parent, bg=C['bg1'])
@@ -160,15 +192,46 @@ class IDE(tk.Tk):
             p = filedialog.askopenfilename(filetypes=exts)
             if p:
                 var.set(p)
-                load_label = {'LEXER': 'lex  .yal', 'GRAMMAR': 'syn  .yapar', 'INPUT': 'in   .txt', 'CPS': 'cps  .cps'}[label]
+                load_label = {'LEXER': 'lex  .yal', 'GRAMMAR': 'syn  .yapar', 'INPUT': 'in   .txt', 'CPS': 'cps  .cps', 'SQL': 'sql  .sql'}[label]
                 self._load_to_editor(p, load_label)
         tk.Button(row, text='＋', command=browse, bg=C['bg2'], fg=C['green'], relief=tk.FLAT, font=('Consolas', 9, 'bold'), width=3, cursor='hand2', activebackground=C['bg3'], activeforeground=C['green']).pack(side=tk.RIGHT, padx=(6, 0))
+
+        return row
+
+    def _dir_btn(self, parent, label, var):
+        """Selector de una carpeta (la base de datos de SQL: su metadata.txt da el esquema)."""
+        row = tk.Frame(parent, bg=C['bg1'])
+        row.pack(fill=tk.X, padx=14, pady=3)
+        dot = tk.Label(row, text='●', bg=C['bg1'], fg=C['text3'], font=('Consolas', 8))
+        dot.pack(side=tk.LEFT, padx=(0, 7))
+        info = tk.Frame(row, bg=C['bg1'])
+        info.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(info, text=label, bg=C['bg1'], fg=C['text2'], font=('Consolas', 7, 'bold'), anchor='w').pack(fill=tk.X)
+        display = tk.StringVar(value='Empty database')
+        tk.Label(info, textvariable=display, bg=C['bg1'], fg=C['text3'], font=('Consolas', 8), anchor='w').pack(fill=tk.X)
+
+        def sync(*_):
+            path = var.get().strip()
+            display.set(os.path.basename(path.rstrip('/\\')) or path if path else 'Empty database')
+            dot.config(fg=C['green'] if path else C['text3'])
+        var.trace_add('write', sync)
+        sync()
+
+        def browse():
+            p = filedialog.askdirectory(title='Carpeta de la base de datos (con su metadata.txt)')
+            if p:
+                var.set(p)
+        tk.Button(row, text='✕', command=lambda: var.set(''), bg=C['bg2'], fg=C['text3'], relief=tk.FLAT, font=('Consolas', 9, 'bold'), width=2, cursor='hand2', activebackground=C['bg3'], activeforeground=C['red']).pack(side=tk.RIGHT, padx=(4, 0))
+        tk.Button(row, text='＋', command=browse, bg=C['bg2'], fg=C['green'], relief=tk.FLAT, font=('Consolas', 9, 'bold'), width=3, cursor='hand2', activebackground=C['bg3'], activeforeground=C['green']).pack(side=tk.RIGHT, padx=(6, 0))
+
+        return row
 
     def _action_btn(self, parent, text, cmd, color, primary=False):
         bg = C['green_dim'] if primary else C['bg2']
         fg = C['text'] if primary else color
         btn = tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg, relief=tk.FLAT, font=('Consolas', 9, 'bold'), padx=13, pady=8, cursor='hand2', anchor='w', activebackground=C['bg3'], activeforeground=color, highlightbackground=C['border'], highlightthickness=1)
         btn.pack(fill=tk.X, padx=14, pady=3)
+        return btn
 
     def _main(self, parent):
         main = tk.Frame(parent, bg=C['bg'])
@@ -189,13 +252,15 @@ class IDE(tk.Tk):
         self.active_tab = tk.StringVar(value='YALex')
         self.editor_container = tk.Frame(parent, bg=C['bg'])
         self.editor_container.pack(fill=tk.BOTH, expand=True)
-        for name, color in [('YALex', C['green']), ('YAPar', C['blue']), ('Entrada', C['amber']), ('Compiscript', C['purple'])]:
+        for name, color in [('YALex', C['green']), ('YAPar', C['blue']), ('Entrada', C['amber']), ('Compiscript', C['purple']), ('SQL', C['blue'])]:
             btn = tk.Button(bar, text=f'  {name}  ', command=lambda n=name: self._switch_tab(n), bg=C['bg1'], fg=C['text3'], relief=tk.FLAT, font=('Consolas', 9, 'bold'), padx=10, pady=8, cursor='hand2', activebackground=C['bg3'], activeforeground=color, borderwidth=0)
             btn.pack(side=tk.LEFT)
             self.tab_btns[name] = (btn, color)
             frame = tk.Frame(self.editor_container, bg=C['bg'])
             if name == 'Compiscript':
                 editor = self._build_cps_editor(frame)
+            elif name == 'SQL':
+                editor = self._build_sql_editor(frame)
             else:
                 editor = scrolledtext.ScrolledText(frame, bg=C['bg'], fg=C['text'], insertbackground=C['cursor'], selectbackground=C['amber_dim'], font=FM, relief=tk.FLAT, padx=16, pady=12, wrap=tk.NONE, undo=True, highlightthickness=0)
                 editor.pack(fill=tk.BOTH, expand=True)
@@ -306,12 +371,54 @@ class IDE(tk.Tk):
                 btn.config(fg=color, bg=C['bg3'], relief=tk.FLAT)
             else:
                 btn.config(fg=C['text3'], bg=C['bg2'])
+        if hasattr(self, '_sidebar_actions'):
+            self._update_sidebar_context(name)
         if hasattr(self, 'out_btns'):
             self._update_context_tabs(name)
             if name == 'YALex':
                 self._populate_yalex_rules()
             elif name == 'YAPar':
                 self._populate_yapar_grammar()
+
+    def _update_sidebar_context(self, tab):
+        """Muestra únicamente los archivos y acciones del módulo activo."""
+        file_map = {
+            'YALex': ('LEXER',),
+            'YAPar': ('LEXER', 'GRAMMAR', 'INPUT'),
+            'Entrada': ('LEXER', 'GRAMMAR', 'INPUT'),
+            'Compiscript': ('CPS',),
+            'SQL': ('SQL', 'DATABASE'),
+        }
+        action_map = {
+            'YALex': ('SAVE',),
+            'YAPar': ('RUN', 'RUN ALL', 'SAVE'),
+            'Entrada': ('RUN', 'RUN ALL', 'SAVE'),
+            'Compiscript': ('COMPILE CPS', 'TEST CPS', 'SAVE'),
+            'SQL': ('ANALYZE SQL', 'EXECUTE SQL', 'SAVE'),
+        }
+        # Se conserva el orden original del panel lateral.
+        for label, widget in self._sidebar_files.items():
+            if label in file_map.get(tab, ()):
+                widget.pack(fill=tk.X, padx=14, pady=3, before=self._sidebar_sections['actions_divider'])
+            else:
+                widget.pack_forget()
+        parser_visible = tab in ('YAPar', 'Entrada')
+        for key in ('parser_divider', 'parser_title', 'parser_box'):
+            widget = self._sidebar_sections[key]
+            if parser_visible:
+                if key == 'parser_box':
+                    widget.pack(fill=tk.X, padx=14, pady=(2, 6), before=self._sidebar_sections['actions_divider'])
+                elif key == 'parser_title':
+                    widget.pack(fill=tk.X, before=self._sidebar_sections['actions_divider'])
+                else:
+                    widget.pack(fill=tk.X, pady=7, before=self._sidebar_sections['actions_divider'])
+            else:
+                widget.pack_forget()
+        for label, widget in self._sidebar_actions.items():
+            if label in action_map.get(tab, ()):
+                widget.pack(fill=tk.X, padx=14, pady=3, before=self._sidebar_sections['session_divider'])
+            else:
+                widget.pack_forget()
 
     OUT_PANEL_DEFAULT = 320     # alto inicial de la parte de abajo (px)
     OUT_PANEL_MIN = 140         # lo mínimo que puede medir (pestañas + algo de contenido)
@@ -352,7 +459,7 @@ class IDE(tk.Tk):
         self.out_frames = {}
         self.out_btns = {}
         self.active_out = tk.StringVar(value='Resultado')
-        tabs = [('Resultado', C['green']), ('Tokens', C['amber']), ('SLR(1)', C['green']), ('LALR', C['blue']), ('LL(1)', C['purple']), ('LR(0)', C['amber']), ('FIRST/FOLLOW', C['text2']), ('YALex Rules', C['green']), ('Grammar YAPar', C['blue']), ('Tokens CPS', C['amber']), ('Árbol CPS', C['purple']), ('Errores Léxicos', C['amber']), ('Errores Sintácticos', C['blue']), ('Errores Semánticos', C['red']), ('Símbolos', C['blue']), ('TAC CPS', C['green']), ('Memoria CPS', C['purple']), ('Pruebas CPS', C['amber']), ('Language CPS', C['green']), ('Grammar CPS', C['amber'])]
+        tabs = [('Resultado', C['green']), ('Tokens', C['amber']), ('SLR(1)', C['green']), ('LALR', C['blue']), ('LL(1)', C['purple']), ('LR(0)', C['amber']), ('FIRST/FOLLOW', C['text2']), ('YALex Rules', C['green']), ('Grammar YAPar', C['blue']), ('Tokens CPS', C['amber']), ('Árbol CPS', C['purple']), ('Errores Léxicos', C['amber']), ('Errores Sintácticos', C['blue']), ('Errores Semánticos', C['red']), ('Símbolos', C['blue']), ('TAC CPS', C['green']), ('Memoria CPS', C['purple']), ('Pruebas CPS', C['amber']), ('Tokens SQL', C['amber']), ('Árbol SQL', C['purple']), ('AST SQL', C['green']), ('Esquema SQL', C['blue']), ('Resultados SQL', C['green']), ('Language CPS', C['green']), ('Grammar CPS', C['amber'])]
         out_container = tk.Frame(panel, bg=C['bg1'])
         out_container.pack(fill=tk.BOTH, expand=True)
         for name, color in tabs:
@@ -362,10 +469,12 @@ class IDE(tk.Tk):
             frame = tk.Frame(out_container, bg=C['bg1'])
             if name in {'LR(0)', 'FIRST/FOLLOW', 'SLR(1)', 'LALR', 'LL(1)', 'YALex Rules', 'Grammar YAPar'}:
                 widget = self._make_generic_tree_widget(frame)
-            elif name == 'Árbol CPS':
+            elif name in ('Árbol CPS', 'Árbol SQL', 'AST SQL'):
                 widget = self._make_cps_tree_widget(frame)
             elif name in {'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos'}:
                 widget = self._make_problems_widget(frame)
+            elif name == 'Resultados SQL':
+                widget = self._make_sql_results_widget(frame)
             elif name == 'Símbolos':
                 widget = self._make_symbols_widget(frame)
             elif name == 'Pruebas CPS':
@@ -392,10 +501,13 @@ class IDE(tk.Tk):
     def _update_context_tabs(self, editor_tab):
         """Muestra solo las herramientas relevantes al modulo seleccionado."""
         cps_tabs = {'Tokens CPS', 'Árbol CPS', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos', 'Símbolos', 'TAC CPS', 'Memoria CPS', 'Pruebas CPS', 'Language CPS', 'Grammar CPS'}
+        sql_tabs = {'Tokens SQL', 'Árbol SQL', 'AST SQL', 'Esquema SQL', 'Resultados SQL', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos'}
         yal_tabs = {'Tokens', 'YALex Rules'}
         yapar_tabs = {'Resultado', 'SLR(1)', 'LALR', 'LL(1)', 'LR(0)', 'FIRST/FOLLOW', 'Grammar YAPar'}
         if editor_tab == 'Compiscript':
             visible = cps_tabs
+        elif editor_tab == 'SQL':
+            visible = sql_tabs
         elif editor_tab == 'YALex':
             visible = yal_tabs
         else:
@@ -405,7 +517,7 @@ class IDE(tk.Tk):
         for name, (btn, _) in self.out_btns.items():
             if name in visible:
                 btn.pack(side=tk.LEFT)
-        target = 'Errores Semánticos' if editor_tab == 'Compiscript' else 'YALex Rules' if editor_tab == 'YALex' else 'Resultado'
+        target = 'Errores Semánticos' if editor_tab == 'Compiscript' else 'AST SQL' if editor_tab == 'SQL' else 'YALex Rules' if editor_tab == 'YALex' else 'Resultado'
         if self.active_out.get() not in visible:
             self._switch_out(target)
 
@@ -461,6 +573,8 @@ class IDE(tk.Tk):
                 tab = 'YAPar'
             elif 'cps' in label:
                 tab = 'Compiscript'
+            elif 'sql' in label:
+                tab = 'SQL'
             else:
                 tab = 'Entrada'
             _, editor = self.editor_frames[tab]
@@ -478,7 +592,7 @@ class IDE(tk.Tk):
 
     def _save(self):
         saved = []
-        for name, var in [('YALex', self.yal_path), ('YAPar', self.yapar_path), ('Entrada', self.inp_path), ('Compiscript', self.cps_path)]:
+        for name, var in [('YALex', self.yal_path), ('YAPar', self.yapar_path), ('Entrada', self.inp_path), ('Compiscript', self.cps_path), ('SQL', self.sql_path)]:
             path = var.get().strip()
             if path:
                 try:
@@ -768,6 +882,334 @@ class IDE(tk.Tk):
                 parts.append(('Se abrió en el editor y se compiló: mira la pestaña de errores.', None))
         self._set_test_info(parts)
 
+    # ── SQL ──────────────────────────────────────────────
+
+    def _build_sql_editor(self, parent):
+        """Editor SQL con números de línea, resaltado de palabras clave y barra Ln/Col."""
+        body = tk.Frame(parent, bg=C['bg'])
+        body.pack(fill=tk.BOTH, expand=True)
+        gutter = tk.Text(body, width=5, bg=C['bg1'], fg=C['text3'], font=FM, relief=tk.FLAT, padx=6, pady=12, state=tk.DISABLED, takefocus=0, cursor='arrow')
+        gutter.pack(side=tk.LEFT, fill=tk.Y)
+        scroll = tk.Scrollbar(body, orient=tk.VERTICAL)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        editor = tk.Text(body, bg=C['bg'], fg=C['text'], insertbackground=C['cursor'], selectbackground=C['amber_dim'], font=FM, relief=tk.FLAT, padx=12, pady=12, wrap=tk.NONE, undo=True, highlightthickness=0)
+        editor.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        editor.config(yscrollcommand=lambda a, b: self._cps_scroll_sync(a, b, gutter, scroll))
+        scroll.config(command=lambda *args: self._cps_yview(editor, gutter, *args))
+        status = tk.Frame(parent, bg=C['bg2'], height=24)
+        status.pack(fill=tk.X)
+        self.sql_cursor_var = tk.StringVar(value='Ln 1, Col 1')
+        tk.Label(status, text='  SQL', bg=C['bg2'], fg=C['blue'], font=('Consolas', 8, 'bold')).pack(side=tk.LEFT)
+        tk.Label(status, text='UTF-8   ', bg=C['bg2'], fg=C['text3'], font=('Consolas', 8)).pack(side=tk.RIGHT)
+        tk.Label(status, textvariable=self.sql_cursor_var, bg=C['bg2'], fg=C['text2'], font=('Consolas', 8)).pack(side=tk.RIGHT, padx=12)
+        self.sql_gutter = gutter
+        self.sql_editor = editor
+        # el último tag configurado tiene más prioridad: comentarios y cadenas ganan a las palabras clave
+        editor.tag_configure('sql_keyword', foreground=C['purple'])
+        editor.tag_configure('sql_type', foreground=C['blue'])
+        editor.tag_configure('sql_function', foreground=C['green'])
+        editor.tag_configure('sql_number', foreground=C['amber'])
+        editor.tag_configure('sql_string', foreground=C['green'])
+        editor.tag_configure('sql_comment', foreground=C['text3'])
+        editor.tag_configure('sql_current', background=C['bg1'])
+        editor.tag_lower('sql_current')
+        for ev in ('<KeyRelease>', '<ButtonRelease-1>', '<MouseWheel>', '<Configure>'):
+            editor.bind(ev, lambda e: self.after_idle(self._refresh_sql_editor), add='+')
+        editor.bind('<<Modified>>', self._on_sql_modified, add='+')
+        self.after_idle(self._refresh_sql_editor)
+        return editor
+
+    def _on_sql_modified(self, event=None):
+        if self.sql_editor.edit_modified():
+            self.sql_editor.edit_modified(False)
+            self.after_idle(self._refresh_sql_editor)
+
+    def _refresh_sql_editor(self):
+        if not hasattr(self, 'sql_editor'):
+            return
+        ed = self.sql_editor
+        lines = int(ed.index('end-1c').split('.')[0])
+        self.sql_gutter.config(state=tk.NORMAL)
+        self.sql_gutter.delete('1.0', tk.END)
+        self.sql_gutter.insert('1.0', '\n'.join(str(i) for i in range(1, lines + 1)))
+        self.sql_gutter.config(state=tk.DISABLED)
+        try:
+            self.sql_gutter.yview_moveto(ed.yview()[0])
+        except Exception:
+            pass
+        line, col = map(int, ed.index(tk.INSERT).split('.'))
+        self.sql_cursor_var.set(f'Ln {line}, Col {col + 1}')
+        ed.tag_remove('sql_current', '1.0', tk.END)
+        ed.tag_add('sql_current', f'{line}.0', f'{line}.end+1c')
+        self._highlight_sql()
+
+    def _highlight_sql(self):
+        ed = self.sql_editor
+        text = ed.get('1.0', 'end-1c')
+        for tag in ('sql_keyword', 'sql_type', 'sql_function', 'sql_number', 'sql_string', 'sql_comment'):
+            ed.tag_remove(tag, '1.0', tk.END)
+        patterns = [
+            ('sql_keyword', r'\b(?:create|table|drop|index|on|insert|into|values|update|set|delete|select|from|where|and|or|not|order|by|asc|desc|inner|join|group|having|in|exists|as|is|null|true|false|primary|key|unique)\b'),
+            ('sql_type', r'\b(?:int|float|varchar|boolean|date)\b'),
+            ('sql_function', r'\b(?:count|sum|avg|min|max)\b'),
+            ('sql_number', r'\b\d+(?:\.\d+)?\b'),
+            ('sql_string', r"'(?:''|[^'])*'"),
+            ('sql_comment', r'--[^\n]*|/\*[\s\S]*?\*/'),
+        ]
+        for tag, pat in patterns:
+            for m in re.finditer(pat, text, re.IGNORECASE):
+                ed.tag_add(tag, f'1.0+{m.start()}c', f'1.0+{m.end()}c')
+
+    def _goto_sql_location(self, line, col=0):
+        self._switch_tab('SQL')
+        ed = self.editor_frames['SQL'][1]
+        pos = f'{max(1, line)}.{max(0, col)}'
+        ed.mark_set(tk.INSERT, pos)
+        ed.see(pos)
+        ed.focus_set()
+        self._refresh_sql_editor()
+
+    def _run_sql(self):
+        self._switch_tab('SQL')
+        self._analyze_sql()
+
+    def _make_sql_results_widget(self, parent):
+        """Panel SQL: mensajes de ejecución y tabla seleccionable de resultados."""
+        shell = tk.Frame(parent, bg=C['bg1'])
+        shell.pack(fill=tk.BOTH, expand=True)
+        header = tk.Frame(shell, bg=C['bg2'])
+        header.pack(fill=tk.X)
+        tk.Label(header, text='CONSULTAS', bg=C['bg2'], fg=C['green'],
+                 font=('Consolas', 9, 'bold')).pack(side=tk.LEFT, padx=(12, 8), pady=6)
+        chooser = ttk.Combobox(header, state='readonly', width=34, font=FS)
+        chooser.pack(side=tk.LEFT, padx=4, pady=4)
+        counter = tk.Label(header, text='Sin resultados', bg=C['bg2'], fg=C['text2'], font=FS)
+        counter.pack(side=tk.RIGHT, padx=12)
+        log = tk.Text(shell, height=4, bg=C['bg1'], fg=C['text2'], font=FM,
+                      wrap=tk.WORD, relief=tk.FLAT, padx=12, pady=6, state=tk.DISABLED)
+        log.pack(fill=tk.X)
+        area = tk.Frame(shell, bg=C['bg1'])
+        area.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        grid = ttk.Treeview(area, show='headings', selectmode='extended')
+        yscroll = ttk.Scrollbar(area, orient='vertical', command=grid.yview)
+        xscroll = ttk.Scrollbar(area, orient='horizontal', command=grid.xview)
+        grid.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+        grid.grid(row=0, column=0, sticky='nsew')
+        yscroll.grid(row=0, column=1, sticky='ns')
+        xscroll.grid(row=1, column=0, sticky='ew')
+        area.grid_rowconfigure(0, weight=1)
+        area.grid_columnconfigure(0, weight=1)
+        grid.tag_configure('even', background=C['bg1'], foreground=C['text'])
+        grid.tag_configure('odd', background=C['bg2'], foreground=C['text'])
+        self._sql_results = {'chooser': chooser, 'counter': counter, 'log': log,
+                             'grid': grid, 'queries': []}
+        chooser.bind('<<ComboboxSelected>>', lambda event: self._display_sql_table(chooser.current()))
+        return shell
+
+    def _sql_log(self, message):
+        log = self._sql_results['log']
+        log.config(state=tk.NORMAL)
+        log.delete('1.0', tk.END)
+        log.insert('1.0', message)
+        log.config(state=tk.DISABLED)
+
+    def _show_sql_message(self, message):
+        self._sql_results['queries'] = []
+        self._sql_results['chooser'].configure(values=[])
+        self._sql_results['chooser'].set('')
+        self._display_sql_table(-1)
+        self._sql_log(message)
+
+    def _show_sql_outputs(self, outputs):
+        queries = [item for item in outputs if isinstance(item, tuple)]
+        messages = [str(item) for item in outputs if not isinstance(item, tuple)]
+        self._sql_results['queries'] = queries
+        chooser = self._sql_results['chooser']
+        chooser.configure(values=[f'Consulta {i}: {len(rows)} fila(s)'
+                                  for i, (_, rows) in enumerate(queries, 1)])
+        if queries:
+            chooser.current(len(queries) - 1)
+            self._display_sql_table(len(queries) - 1)
+        else:
+            chooser.set('')
+            self._display_sql_table(-1)
+        self._sql_log('\n'.join(messages) if messages else
+                      ('Consultas ejecutadas correctamente.' if queries else 'No se ejecutaron sentencias.'))
+
+    def _display_sql_table(self, index):
+        state = self._sql_results
+        grid = state['grid']
+        grid.delete(*grid.get_children())
+        grid.configure(columns=())
+        if index < 0 or index >= len(state['queries']):
+            state['counter'].configure(text='Sin resultados')
+            return
+        columns, rows = state['queries'][index]
+        keys = [f'col_{i}' for i in range(len(columns))]
+        grid.configure(columns=keys)
+        for key, title in zip(keys, columns):
+            grid.heading(key, text=str(title), anchor=tk.W)
+            grid.column(key, width=max(105, min(290, len(str(title)) * 11 + 35)),
+                        minwidth=75, stretch=True, anchor=tk.W)
+        for i, row in enumerate(rows):
+            grid.insert('', tk.END, values=['NULL' if v is None else str(v) for v in row],
+                        tags=('even' if i % 2 == 0 else 'odd',))
+        state['counter'].configure(text=f'{len(rows)} fila(s) · {len(columns)} columna(s)')
+
+    def _execute_sql(self):
+        """Ejecuta el SQL del editor y muestra los resultados en el panel inferior."""
+        self._switch_tab('SQL')
+        source = self.sql_editor.get('1.0', 'end-1c')
+        if not source.strip():
+            self._show_sql_message('Escribe una sentencia SQL antes de ejecutar.')
+            self._switch_out('Resultados SQL')
+            self._status('SQL vacío', 'error')
+            return
+        folder = self.db_path.get().strip()
+        if not folder:
+            self._show_sql_message('Selecciona una carpeta DATABASE en el panel izquierdo antes de ejecutar.')
+            self._switch_out('Resultados SQL')
+            self._status('Selecciona DATABASE', 'error')
+            return
+        if not messagebox.askyesno('Ejecutar SQL',
+                'Se ejecutarán las sentencias del editor sobre la carpeta:\n\n'
+                + os.path.abspath(folder) + '\n\n'
+                'CREATE, DROP, INSERT, UPDATE y DELETE pueden modificar archivos. ¿Continuar?'):
+            return
+        self._status('Ejecutando SQL...', 'working')
+        self.update_idletasks()
+        try:
+            outputs = sql_execute(source, folder)
+            self._show_sql_outputs(outputs)
+            self._switch_out('Resultados SQL')
+            self._status('SQL ejecutado correctamente', 'ok')
+            # Refrescar la vista del catálogo desde el disco, no desde una simulación.
+            catalog = sql_load_catalog(folder)
+            self._set_text('Esquema SQL', sql_format_metadata(catalog))
+        except (StorageError, ValueError, OSError) as exc:
+            self._show_sql_message('Error de ejecución SQL:\n' + str(exc)
+                           + '\n\nNota: las sentencias anteriores al error pueden haberse guardado.')
+            self._switch_out('Resultados SQL')
+            self._status('Error ejecutando SQL', 'error')
+        except Exception as exc:
+            self._show_sql_message('Error inesperado:\n' + str(exc))
+            self._switch_out('Resultados SQL')
+            self._status('Error inesperado SQL', 'error')
+
+    @staticmethod
+    def _format_sql_outputs(outputs):
+        blocks = []
+        for item in outputs:
+            if not isinstance(item, tuple):
+                blocks.append(str(item))
+                continue
+            columns, rows = item
+            columns = [str(c) for c in columns]
+            cells = [['NULL' if v is None else str(v) for v in row] for row in rows]
+            widths = [max(len(name), *(len(row[i]) for row in cells))
+                      for i, name in enumerate(columns)]
+            if columns:
+                header = ' | '.join(name.ljust(widths[i]) for i, name in enumerate(columns))
+                divider = '-+-'.join('-' * width for width in widths)
+                lines = [header, divider]
+                lines.extend(' | '.join(value.ljust(widths[i]) for i, value in enumerate(row)) for row in cells)
+            else:
+                lines = []
+            lines.append(f'({len(rows)} fila(s))')
+            blocks.append('\n'.join(lines))
+        return '\n\n'.join(blocks) if blocks else 'No se ejecutaron sentencias.'
+
+    def _analyze_sql(self):
+        """Analiza el SQL del editor: tokens, árbol sintáctico, AST y errores."""
+        try:
+            self._status('analyzing SQL...', 'working')
+            # sin .strip(): se necesitan las líneas tal cual para que los errores apunten bien
+            source = self.editor_frames['SQL'][1].get('1.0', 'end-1c')
+            if not source.strip():
+                for tab in ('Tokens SQL', 'Esquema SQL'):
+                    self._set_text(tab, 'Escribe o carga código SQL primero.')
+                self._canvas_message('Árbol SQL', 'Escribe o carga código SQL primero')
+                self._canvas_message('AST SQL', 'Escribe o carga código SQL primero')
+                self._show_cps_problems([], [], [], empty_message='Escribe o carga código SQL primero', mode='sql')
+                self._status('missing SQL source', 'error')
+                self._switch_out('Errores Sintácticos')
+                return
+
+            result = sql_parse(source)
+            self._show_sql_tokens(result)
+            script = None
+
+            if result.tree is not None:
+                self._draw_tree_item('Árbol SQL', sql_parse_tree_item(result))
+            script = sql_build_ast(result) if result.ok else None
+            if script is not None:
+                self._draw_tree_item('AST SQL', sql_ast_to_tree(script))
+            else:
+                self._canvas_message('AST SQL', 'No hay AST: corrige primero los errores léxicos y sintácticos')
+
+            as_rows = lambda errors: [{'line': e.line, 'column': e.column, 'message': e.message} for e in errors]
+            semantic = self._analyze_sql_semantics(script)
+            self._show_cps_problems(as_rows(result.lexical_errors), as_rows(result.syntax_errors), semantic, mode='sql',
+                                    semantic_note='No hay análisis semántico: corrige primero los errores léxicos y sintácticos' if script is None else None)
+
+            tokens = [t for t in result.tokens if t[0] != 'EOF']
+            self.stat_vars['tokens'].set(str(len(tokens)))
+            total = len(result.errors) + len(semantic)
+            self.stat_vars['conflicts'].set(str(total))
+            if result.errors:
+                self._status(f'SQL: {len(result.errors)} error(s)', 'error')
+                self._switch_out('Errores Léxicos' if result.lexical_errors else 'Errores Sintácticos')
+            elif semantic:
+                self._status(f'SQL: {len(semantic)} error(es) semántico(s)', 'error')
+                self._switch_out('Errores Semánticos')
+            else:
+                n = len(script.statements)
+                self._status(f"SQL: léxico + sintáctico + semántico OK ({n} sentencia{'s' if n != 1 else ''})", 'ok')
+                self._switch_out('AST SQL')
+        except Exception as e:
+            self._status(f'SQL error: {e}', 'error')
+            messagebox.showerror('SQL', str(e))
+
+    def _analyze_sql_semantics(self, script):
+        """Análisis semántico del script contra el esquema de la carpeta DATABASE (o una base vacía)."""
+        if script is None:
+            self._set_text('Esquema SQL', 'Sin esquema: corrige primero los errores léxicos y sintácticos.')
+            return []
+        folder = self.db_path.get().strip()
+        try:
+            catalog = sql_load_catalog(folder) if folder else SqlCatalog()
+        except MetadataError as e:
+            self._set_text('Esquema SQL', f'No se pudo leer el esquema de {folder}:\n{e}')
+            return [_Located(e.line or 1, 0, f'metadata.txt no es válido: {e.message}' + (f' (línea {e.line} del archivo)' if e.line else ''))]
+        result = sql_analyze_script(script, catalog)
+        origin = f'la carpeta {os.path.basename(folder.rstrip("/\\")) or folder}' if folder else 'una base vacía'
+        self._set_text('Esquema SQL', f'# Esquema al terminar el script (se partió de {origin}; los CREATE y DROP del script se aplican en memoria)\n\n' + sql_format_metadata(result.catalog))
+        return [_Located(e.line, e.column, e.message) for e in result.errors]
+
+    def _show_sql_tokens(self, result):
+        tokens = [t for t in result.tokens if t[0] != 'EOF']
+        lines = [f'ANÁLISIS LÉXICO · {len(tokens)} token(s)', '─' * 86,
+                 f"{'#':>4}  {'TOKEN':<18} {'LEXEMA':<38} {'LÍNEA':>6} {'COL':>5}", '─' * 86]
+        for i, (name, text, line, col) in enumerate(tokens, 1):
+            lexeme = repr(text) if len(text) <= 36 else repr(text[:33] + '...')
+            lines.append(f'{i:>4}  {name:<18} {lexeme:<38} {line:>6} {col + 1:>5}')
+        self._set_text('Tokens SQL', '\n'.join(lines))
+
+    def _draw_tree_item(self, tab, item):
+        """Dibuja un TreeItem (sqlengine.treeview) en el canvas de la pestaña."""
+        def convert(node):
+            label = node.label if len(node.label) <= 46 else node.label[:43] + '...'
+            children = [convert(c) for c in node.children]
+            return self._make_tree_node(label, children, terminal=(node.kind == 'leaf'), role=(node.kind == 'role'))
+        self._draw_tree(tab, convert(item))
+
+    def _canvas_message(self, tab, message):
+        _, canvas = self.out_frames[tab]
+        canvas.delete('all')
+        canvas._tree_scale = 1.0
+        canvas.create_text(30, 40, text=message, fill=C['text3'], font=('Consolas', 10), anchor='w')
+        canvas.configure(scrollregion=(0, 0, 900, 120))
+
     def _run_compiscript(self):
         """Compila el contenido del editor Compiscript en un hilo separado."""
         threading.Thread(target=self._analyze_compiscript, daemon=True).start()
@@ -878,9 +1320,14 @@ class IDE(tk.Tk):
             widget.insert(tk.END, f'{i:>4}  {name:<28} {lexeme:<30} {tok.line:>6} {tok.column + 1:>5}\n')
         widget.config(state=tk.DISABLED)
 
-    def _show_cps_problems(self, lexical, syntax, semantic, empty_message=None):
-        """Muestra cada fase de errores CPS en su propia pestaña."""
+    def _show_cps_problems(self, lexical, syntax, semantic, empty_message=None, mode='cps', semantic_note=None):
+        """
+        Muestra cada fase de errores en su propia pestaña (las comparten Compiscript y SQL).
+        `mode` dice a qué editor se vuelve al hacer doble clic; `semantic_note` reemplaza el «OK»
+        de la fase semántica cuando todavía no se analiza.
+        """
         self._problem_locations = {}
+        self._problem_mode = mode
 
         groups = [
             ('Errores Léxicos', lexical, 'LEXICAL', 'Sin errores léxicos'),
@@ -897,7 +1344,10 @@ class IDE(tk.Tk):
                 continue
 
             if not errors:
-                view.insert('', 'end', values=('✓ OK', '—', '—', ok_message), tags=('ok',))
+                if phase == 'SEMANTIC' and semantic_note:
+                    view.insert('', 'end', values=('INFO', '—', '—', semantic_note), tags=('info',))
+                else:
+                    view.insert('', 'end', values=('✓ OK', '—', '—', ok_message), tags=('ok',))
                 continue
 
             phase_tag = {'LEXICAL': 'lexical', 'SYNTAX': 'syntax', 'SEMANTIC': 'semantic'}[phase]
@@ -930,7 +1380,10 @@ class IDE(tk.Tk):
         iid = view.focus()
         location = getattr(self, '_problem_locations', {}).get((tab, iid))
         if location:
-            self._goto_cps_location(*location)
+            if getattr(self, '_problem_mode', 'cps') == 'sql':
+                self._goto_sql_location(*location)
+            else:
+                self._goto_cps_location(*location)
 
     def _make_generic_tree_widget(self, parent):
         tree = ttk.Treeview(parent, columns=('detail',), show='tree headings')
@@ -1141,18 +1594,28 @@ class IDE(tk.Tk):
             widget.delete('1.0', tk.END)
             widget.config(state=tk.DISABLED)
 
+    # Medidas del dibujo de árboles (las comparten el árbol de Compiscript, el de SQL y el AST)
+    _TREE_NODE_H = 34
+    _TREE_LEVEL_GAP = 74
+    _TREE_SIBLING_GAP = 22
+    _TREE_PAD_X = 16
+    _TREE_MIN_W = 72
+
+    def _make_tree_node(self, label, children, terminal=False, role=False):
+        """Un nodo ya medido: su ancho y el ancho que ocupa todo su subárbol."""
+        width = max(self._TREE_MIN_W, len(label) * 8 + self._TREE_PAD_X * 2)
+        if children:
+            children_width = sum(c['subtree_w'] for c in children) + self._TREE_SIBLING_GAP * (len(children) - 1)
+            subtree_w = max(width, children_width)
+        else:
+            subtree_w = width
+        return {
+            'label': label, 'terminal': terminal, 'role': role, 'children': children,
+            'width': width, 'subtree_w': subtree_w, 'x': 0, 'y': 0
+        }
+
     def _show_cps_tree(self, tree, parser):
         """Dibuja el árbol ANTLR como un grafo jerárquico sobre Canvas."""
-        tab = 'Árbol CPS'
-        _, canvas = self.out_frames[tab]
-        canvas.delete('all')
-        canvas._tree_scale = 1.0
-
-        node_h = 34
-        level_gap = 74
-        sibling_gap = 22
-        padding_x = 16
-        min_w = 72
 
         def node_info(node):
             rule_index = getattr(node, 'getRuleIndex', lambda: -1)()
@@ -1170,18 +1633,19 @@ class IDE(tk.Tk):
             count = node.getChildCount() if hasattr(node, 'getChildCount') else 0
             for i in range(count):
                 children.append(build(node.getChild(i)))
-            width = max(min_w, len(label) * 8 + padding_x * 2)
-            if children:
-                children_width = sum(c['subtree_w'] for c in children) + sibling_gap * (len(children) - 1)
-                subtree_w = max(width, children_width)
-            else:
-                subtree_w = width
-            return {
-                'label': label, 'terminal': terminal, 'children': children,
-                'width': width, 'subtree_w': subtree_w, 'x': 0, 'y': 0
-            }
+            return self._make_tree_node(label, children, terminal)
 
-        root = build(tree)
+        self._draw_tree('Árbol CPS', build(tree))
+
+    def _draw_tree(self, tab, root):
+        """Posiciona y dibuja sobre el canvas de la pestaña un árbol medido con _make_tree_node."""
+        _, canvas = self.out_frames[tab]
+        canvas.delete('all')
+        canvas._tree_scale = 1.0
+
+        node_h = self._TREE_NODE_H
+        level_gap = self._TREE_LEVEL_GAP
+        sibling_gap = self._TREE_SIBLING_GAP
 
         def position(item, left, depth):
             item['y'] = 35 + depth * level_gap
@@ -1209,18 +1673,26 @@ class IDE(tk.Tk):
 
         def draw_nodes(item):
             x, y, w = item['x'], item['y'], item['width']
-            fill = C['bg3'] if not item['terminal'] else C['bg2']
-            outline = C['purple'] if not item['terminal'] else C['green_dim']
-            text_color = C['purple'] if not item['terminal'] else C['green']
-            canvas.create_rectangle(
-                x - w / 2, y - node_h / 2, x + w / 2, y + node_h / 2,
-                fill=fill, outline=outline, width=2, tags='node'
-            )
-            canvas.create_text(
-                x, y, text=item['label'], fill=text_color,
-                font=('Consolas', 9, 'bold' if not item['terminal'] else 'normal'),
-                tags='node'
-            )
+            if item['role']:
+                # un título que agrupa hijos ("where:", "items:"...): borde punteado, no es un nodo del árbol
+                canvas.create_rectangle(
+                    x - w / 2, y - node_h / 2, x + w / 2, y + node_h / 2,
+                    fill=C['bg1'], outline=C['amber'], width=2, dash=(4, 3), tags='node'
+                )
+                canvas.create_text(x, y, text=item['label'], fill=C['amber'], font=('Consolas', 9, 'italic'), tags='node')
+            else:
+                fill = C['bg3'] if not item['terminal'] else C['bg2']
+                outline = C['purple'] if not item['terminal'] else C['green_dim']
+                text_color = C['purple'] if not item['terminal'] else C['green']
+                canvas.create_rectangle(
+                    x - w / 2, y - node_h / 2, x + w / 2, y + node_h / 2,
+                    fill=fill, outline=outline, width=2, tags='node'
+                )
+                canvas.create_text(
+                    x, y, text=item['label'], fill=text_color,
+                    font=('Consolas', 9, 'bold' if not item['terminal'] else 'normal'),
+                    tags='node'
+                )
             for child in item['children']:
                 draw_nodes(child)
 

@@ -1,0 +1,10 @@
+CREATE TABLE libros (id INT PRIMARY KEY, titulo VARCHAR(100) NOT NULL, precio FLOAT, publicado DATE, disponible BOOLEAN, isbn VARCHAR(13) UNIQUE);
+CREATE INDEX idx_libros_titulo ON libros (titulo);
+CREATE INDEX idx_libros_precio ON libros (precio);
+INSERT INTO libros VALUES (1, 'Compiladores', 59.9, '2020-05-01', TRUE, '9780201100884');
+SELECT titulo FROM libros WHERE precio < 100 AND disponible;
+DROP INDEX idx_libros_titulo;
+CREATE INDEX idx_libros_titulo ON libros (titulo);
+DROP TABLE libros;
+CREATE TABLE libros (id INT);
+INSERT INTO libros VALUES (2);

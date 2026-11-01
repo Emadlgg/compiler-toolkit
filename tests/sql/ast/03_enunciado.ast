@@ -1,0 +1,31 @@
+Script
+  Select
+    items:
+      SelectExpr
+        ColumnRef nombre
+    from:
+      TableRef estudiantes
+    where:
+      BinaryOp >=
+        ColumnRef edad
+        Literal INT 18
+  Select
+    items:
+      SelectExpr
+        ColumnRef nombre
+    from:
+      TableRef estudiantes
+    where:
+      InSubquery
+        ColumnRef id
+        query:
+          Select
+            items:
+              SelectExpr
+                ColumnRef estudiante_id
+            from:
+              TableRef inscripciones
+            where:
+              BinaryOp =
+                ColumnRef curso_id
+                Literal INT 3

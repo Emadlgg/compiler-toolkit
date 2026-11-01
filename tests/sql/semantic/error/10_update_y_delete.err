@@ -1,0 +1,8 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:30 No se puede guardar un valor de tipo VARCHAR en la columna 'edad' (INT)
+semántico 3:32 La columna 'nombre' no admite NULL
+semántico 4:33 La columna 'edad' se asigna más de una vez en el UPDATE
+semántico 5:38 La condición de WHERE debe ser booleana pero es de tipo INT
+semántico 6:34 La columna 'nota' no existe en la tabla 'estudiantes'
+semántico 7:30 La condición de WHERE debe ser booleana pero es de tipo VARCHAR
+semántico 8:83 La condición de WHERE debe ser booleana pero es de tipo FLOAT

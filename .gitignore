@@ -1,18 +1,97 @@
+# Compiler Lab - YALex, YAPar, Compiscript y SQL
+# Mantener en Git el codigo fuente, las gramaticas, los parsers ANTLR
+# generados en Python y los archivos esperados de las pruebas.
+
+# Python: cache, compilacion y entornos virtuales
 __pycache__/
 *.py[cod]
-
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.prof
+*.pstats
 .venv/
 venv/
+env/
+ENV/
+.python-version
+pip-wheel-metadata/
+build/
+dist/
+*.egg-info/
+.eggs/
 
+# Archivos locales de configuracion y secretos
+.env
+.env.*
+!.env.example
+!.env.sample
+*.local
+
+# Editores e IDEs
 .vscode/
 .idea/
+*.sublime-workspace
+*.code-workspace
+*.swp
+*.swo
+*~
 
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ANTLR: artefactos auxiliares (NO ignorar generated/*.py)
 *.interp
 *.tokens
 
-.DS_Store
-Thumbs.db
-*.pyc
-*.pyo
-.tmp/
-temp_*.py
+# Archivos temporales de generacion YALex/YAPar
+/temp_gui_lexer.py
+/temp_gui_lexer_*.py
+/temp_lexer.py
+/temp_parser.py
+/.tmp/
+/tmp/
+/temp/
+
+# Datos de ejecucion del interprete SQL (bases locales)
+/database/
+/database_*/
+# Para compartir una base de ejemplo, guardarla en examples/ o fixtures/
+
+# Copias de seguridad, volcados y logs
+*.bak
+*.backup
+*.orig
+*.rej
+*.log
+*.pid
+*.pid.lock
+*.stackdump
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Salidas temporales en la raiz (no ignorar fixtures de tests/)
+/output/
+/outputs/
+/results/
+/resultados/
+
+# IMPORTANTE: NO ignorar globalmente *.csv, *.json, *.out, *.err,
+# *.tac, *.pdf, *.java ni generated/.
+# Algunos son archivos de prueba, documentacion o codigo necesario.

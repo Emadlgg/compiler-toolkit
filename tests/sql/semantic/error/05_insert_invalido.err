@@ -1,0 +1,12 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:31 La fila 1 tiene 2 valor(es) pero la tabla 'estudiantes' tiene 6 columna(s)
+semántico 3:44 La fila 1 tiene 3 valor(es) pero el INSERT nombra 2 columna(s)
+semántico 4:45 No se puede guardar un valor de tipo VARCHAR en la columna 'id' (INT)
+semántico 5:48 No se puede guardar un valor de tipo INT en la columna 'nombre' (VARCHAR(50))
+semántico 6:12 La columna 'id' no admite NULL y el INSERT no le da un valor
+semántico 7:48 La columna 'nombre' no admite NULL
+semántico 8:61 No se puede guardar un valor de tipo FLOAT en la columna 'edad' (INT)
+semántico 9:48 El texto tiene 68 caracteres y la columna 'nombre' admite 50
+semántico 10:29 La columna 'id' está repetida en el INSERT
+semántico 11:62 Fecha no válida: 'ayer'
+semántico 12:59 No se pueden usar columnas en VALUES: 'edad'

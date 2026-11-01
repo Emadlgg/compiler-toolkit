@@ -1,0 +1,1 @@
+SELECT * FROM a INNER JOIN b WHERE a.id = 1;

@@ -1,0 +1,6 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:13 Ya existe un índice llamado 'idx_estudiantes_edad' (sobre estudiantes.edad)
+semántico 3:34 La columna 'estudiantes.edad' ya tiene un índice ('idx_estudiantes_edad')
+semántico 4:32 La columna 'edda' no existe en la tabla 'estudiantes'
+semántico 5:11 El índice 'idx_estudiantes_edda' no existe. ¿Quisiste decir 'idx_estudiantes_edad'?
+semántico 6:11 El índice 'fantasma' no existe

@@ -1,0 +1,40 @@
+Script
+  Insert estudiantes (id, nombre)
+    Row
+      Literal INT 1
+      Literal VARCHAR 'Ana'
+    Row
+      Literal INT 2
+      Literal VARCHAR 'O''Brien'
+  Insert cursos
+    Row
+      Literal INT 1
+      Literal VARCHAR 'Redes'
+      Literal INT -5
+      Literal FLOAT 2.5
+      Literal BOOLEAN TRUE
+      Literal NULL
+      Literal DATE '2024-01-15'
+  Update estudiantes
+    Assign edad
+      BinaryOp +
+        ColumnRef edad
+        Literal INT 1
+    Assign nombre
+      Literal VARCHAR 'X'
+    where:
+      BinaryOp AND
+        BinaryOp =
+          ColumnRef id
+          Literal INT 1
+        BinaryOp =
+          ColumnRef activo
+          Literal BOOLEAN TRUE
+  Delete estudiantes
+    where:
+      BinaryOp OR
+        BinaryOp <
+          ColumnRef edad
+          Literal INT 18
+        IsNull
+          ColumnRef nombre

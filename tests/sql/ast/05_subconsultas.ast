@@ -1,0 +1,41 @@
+Script
+  Select
+    items:
+      SelectExpr
+        ColumnRef nombre
+    from:
+      TableRef estudiantes AS e
+    where:
+      NotExists
+        Select
+          items:
+            Star *
+          from:
+            TableRef inscripciones AS i
+          where:
+            BinaryOp =
+              ColumnRef i.estudiante_id
+              ColumnRef e.id
+  Select
+    items:
+      SelectExpr
+        ColumnRef nombre
+    from:
+      TableRef estudiantes
+    where:
+      BinaryOp AND
+        BinaryOp >
+          ColumnRef promedio
+          Subquery
+            Select
+              items:
+                SelectExpr
+                  Aggregate AVG
+                    ColumnRef promedio
+              from:
+                TableRef estudiantes
+        NotIn
+          ColumnRef id
+          values:
+            Literal INT 1
+            Literal INT 2

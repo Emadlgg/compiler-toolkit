@@ -1,0 +1,7 @@
+# la ubicación de cada error se calculó desde el texto (el | de la fuente), no desde la salida del analizador
+semántico 2:44 La subconsulta de IN debe devolver una sola columna pero devuelve 2
+semántico 3:45 Una subconsulta usada como valor debe devolver una sola columna pero devuelve 2
+semántico 4:48 No se puede comparar VARCHAR con INT, que es lo que devuelve la subconsulta
+semántico 5:15 Las subconsultas solo se permiten en la cláusula WHERE (aquí está en SELECT)
+semántico 6:30 Las subconsultas solo se permiten en la cláusula WHERE (aquí está en SET)
+semántico 7:59 La tabla 'fantasma' no existe
