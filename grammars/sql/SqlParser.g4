@@ -18,7 +18,17 @@ statement
     | updateStmt
     | deleteStmt
     | selectStmt
+    | createDatabase
+    | useDatabase
+    | showDatabases
+    | showTables
     ;
+
+createDatabase : CREATE DATABASE databaseName ;
+useDatabase : USE databaseName ;
+showDatabases : SHOW DATABASES ;
+showTables : SHOW TABLES ;
+databaseName : IDENTIFIER ;
 
 // ── Definición de datos ───────────────────────────────────
 createTable

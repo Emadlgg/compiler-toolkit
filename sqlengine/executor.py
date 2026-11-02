@@ -8,16 +8,51 @@ from sqlengine.query_engine import QueryEngine
 from sqlengine.indexes import IndexManager
 
 
-def execute(sql, directory):
+def _execute_sql_batch(sql, directory):
+    parsed = parse(sql)
+    if not parsed.ok:
+        raise StorageError('\n'.join(map(str, parsed.errors)))
+    return _execute_sql_batch_ast(build_ast(parsed), directory)
+
+
+def execute_with_context(sql, directory):
+    """Procesa todos los comandos con el lexer, parser y AST de ANTLR."""
+    from sqlengine.database_commands import workspace, perform
     parsed = parse(sql)
     if not parsed.ok:
         raise StorageError('\n'.join(map(str, parsed.errors)))
     script = build_ast(parsed)
+    root, current = workspace(directory)
+    outputs, pending = [], []
+    database_nodes = (ast.CreateDatabase, ast.UseDatabase, ast.ShowDatabases, ast.ShowTables)
+
+    def flush():
+        if pending:
+            outputs.extend(_execute_sql_batch_ast(ast.Script(list(pending)), str(current)))
+            pending.clear()
+
+    for stmt in script.statements:
+        if isinstance(stmt, database_nodes):
+            flush()
+            if isinstance(stmt, ast.CreateDatabase):
+                command, argument = 'CREATE DATABASE', str(stmt.name)
+            elif isinstance(stmt, ast.UseDatabase):
+                command, argument = 'USE', str(stmt.name)
+            elif isinstance(stmt, ast.ShowDatabases):
+                command, argument = 'SHOW DATABASES', ''
+            else:
+                command, argument = 'SHOW TABLES', ''
+            output, current = perform(command, argument, root, current)
+            outputs.append(output)
+        else:
+            pending.append(stmt)
+    flush()
+    return outputs, str(current)
+
+
+def _execute_sql_batch_ast(script, directory):
+    """Ejecuta nodos AST ya analizados sin volver a procesar el texto."""
     store = FileStorage(directory)
-    supported = (ast.CreateTable, ast.DropTable, ast.CreateIndex, ast.DropIndex,
-                 ast.Insert, ast.Select, ast.Update, ast.Delete)
-    if any(not isinstance(stmt, supported) for stmt in script.statements):
-        raise StorageError('Sentencia no soportada por el ejecutor')
     checked = analyze_script(script, store.catalog)
     if checked.errors:
         raise StorageError('\n'.join(map(str, checked.errors)))
@@ -58,4 +93,10 @@ def execute(sql, directory):
             count = engine.delete(stmt)
             indexes.refresh_table(stmt.table)
             outputs.append(f'{count} fila(s) eliminada(s) de {stmt.table}')
+    return outputs
+
+
+def execute(sql, directory):
+    """API compatible con ejecutar_sql.py y las pruebas existentes."""
+    outputs, _ = execute_with_context(sql, directory)
     return outputs

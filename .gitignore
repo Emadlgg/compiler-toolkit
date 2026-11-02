@@ -92,6 +92,9 @@ $RECYCLE.BIN/
 /results/
 /resultados/
 
+# Bases de datos creadas desde Compiler Lab
+/bases_datos/
+
 # IMPORTANTE: NO ignorar globalmente *.csv, *.json, *.out, *.err,
 # *.tac, *.pdf, *.java ni generated/.
 # Algunos son archivos de prueba, documentacion o codigo necesario.

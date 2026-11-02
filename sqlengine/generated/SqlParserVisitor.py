@@ -19,6 +19,31 @@ class SqlParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SqlParser#createDatabase.
+    def visitCreateDatabase(self, ctx:SqlParser.CreateDatabaseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SqlParser#useDatabase.
+    def visitUseDatabase(self, ctx:SqlParser.UseDatabaseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SqlParser#showDatabases.
+    def visitShowDatabases(self, ctx:SqlParser.ShowDatabasesContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SqlParser#showTables.
+    def visitShowTables(self, ctx:SqlParser.ShowTablesContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SqlParser#databaseName.
+    def visitDatabaseName(self, ctx:SqlParser.DatabaseNameContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SqlParser#createTable.
     def visitCreateTable(self, ctx:SqlParser.CreateTableContext):
         return self.visitChildren(ctx)

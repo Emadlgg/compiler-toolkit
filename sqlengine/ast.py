@@ -125,6 +125,26 @@ class DropIndex(Node):
         return f"DropIndex {self.name}"
 
 
+@dataclass
+class CreateDatabase(Node):
+    name: str
+    def label(self):
+        return f"CreateDatabase {self.name}"
+
+@dataclass
+class UseDatabase(Node):
+    name: str
+    def label(self):
+        return f"UseDatabase {self.name}"
+
+@dataclass
+class ShowDatabases(Node):
+    pass
+
+@dataclass
+class ShowTables(Node):
+    pass
+
 # ── Manipulación de datos ─────────────────────────────────
 
 @dataclass

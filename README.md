@@ -207,12 +207,13 @@ Módulos clave: `compiscript/semantic.py`, `symbol_table.py`, `codegen.py`, `tac
 
 Este componente implementa un intérprete SQL **sin SQLite, MySQL, PostgreSQL ni otro DBMS** para almacenar o ejecutar consultas. Utiliza directorios, archivos CSV, `metadata.txt` y archivos JSON para índices.
 
-**Proceso:** SQL → lexer → parser → AST → análisis semántico → motor de ejecución → archivos → resultados.
+**Proceso:** SQL → lexer ANTLR → parser ANTLR → AST → análisis semántico → motor de ejecución → archivos → resultados. Los comandos de administración de bases de datos también siguen este recorrido.
 
 ### Operaciones soportadas
 
 | Categoría | Funcionalidades |
 |---|---|
+| Administración de bases de datos | `CREATE DATABASE`, `USE`, `SHOW DATABASES`, `SHOW TABLES` |
 | Definición | `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `DROP INDEX` |
 | Manipulación | `INSERT`, `UPDATE`, `DELETE` |
 | Consulta | `SELECT`, `FROM`, `WHERE`, `ORDER BY`, `INNER JOIN` |
@@ -221,6 +222,43 @@ Este componente implementa un intérprete SQL **sin SQLite, MySQL, PostgreSQL ni
 | Subconsultas | `IN`, `NOT IN`, `EXISTS`, `NOT EXISTS` y escalares en condiciones |
 | Tipos | `INT`, `FLOAT`, `VARCHAR(n)`, `BOOLEAN`, `DATE` (`YYYY-MM-DD`) |
 | Restricciones | `PRIMARY KEY`, `UNIQUE`, `NOT NULL` |
+
+### Crear y seleccionar bases de datos desde SQL
+
+El campo **DATABASE** de la interfaz selecciona una carpeta de trabajo. Desde ella, `CREATE DATABASE nombre;` crea una subcarpeta y `USE nombre;` la convierte en la base activa. `SHOW DATABASES;` lista las bases reconocidas en esa carpeta de trabajo y `SHOW TABLES;` lista las tablas de la base activa. **No es necesario utilizar un servidor de bases de datos externo.**
+
+Los cuatro comandos se reconocen en el lexer y parser **ANTLR 4.13.2**, tienen nodos propios en el AST y participan en el análisis semántico y en la ejecución. Por ello, `ANALYZE SQL` permite visualizar sus tokens, árbol y AST, mientras que `EXECUTE SQL` realiza las operaciones de archivos.
+
+**Demostración desde la GUI:** crea y selecciona una carpeta vacía, por ejemplo `bases_datos/`, en `DATABASE`. Pega este script y pulsa `ANALYZE SQL`; después pulsa `EXECUTE SQL`:
+
+```sql
+CREATE DATABASE universidad;
+SHOW DATABASES;
+USE universidad;
+
+CREATE TABLE estudiantes (
+    id INT PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL
+);
+INSERT INTO estudiantes VALUES (1, 'Ana');
+INSERT INTO estudiantes VALUES (2, 'Carlos');
+SHOW TABLES;
+SELECT * FROM estudiantes ORDER BY id;
+```
+
+Se creará la estructura:
+
+```text
+bases_datos/
+└── universidad/
+    ├── .compilerlab_db
+    ├── metadata.txt
+    └── estudiantes.csv
+```
+
+El archivo `.compilerlab_db` identifica una base creada por el intérprete. La carpeta activa se actualiza en la GUI después de `USE`. Para volver a ejecutar el ejemplo de creación desde cero, selecciona otra carpeta vacía: `CREATE DATABASE` rechaza nombres existentes.
+
+**Importante:** seleccionar `DATABASE` en la interfaz sigue siendo útil para abrir bases existentes; el comando `USE` cambia la base activa dentro de la carpeta de trabajo. `SHOW DATABASES` no busca todas las bases de tu computadora, solo las del espacio de trabajo seleccionado.
 
 ### Archivos de almacenamiento
 
@@ -321,6 +359,7 @@ proyecto/
 ├── compiscript/           # Semántica, símbolos, TAC y memoria
 │   └── generated/         # Lexer y parser generados por ANTLR
 ├── sqlengine/             # Frontend, AST, semántica, motor y almacenamiento SQL
+│   ├── database_commands.py  # CREATE DATABASE, USE y SHOW
 │   └── generated/         # Lexer y parser SQL generados por ANTLR
 ├── gui/
 │   └── app.py             # Interfaz gráfica integrada
@@ -361,17 +400,19 @@ proyecto/
 | `evaluator.py` | Evaluación de expresiones y conversión de tipos |
 | `query_engine.py` | Consultas, JOIN, agregaciones, UPDATE y DELETE |
 | `indexes.py` | Índices persistentes |
-| `executor.py` | Coordinación de análisis y ejecución |
+| `executor.py` | Coordinación de análisis y ejecución, incluidos comandos de base de datos |
+| `database_commands.py` | Creación, selección y listado de bases de datos mediante directorios |
 
 ## Limitaciones y precauciones
 
-1. **Ejecución SQL sin transacciones completas:** un script puede modificar archivos antes de encontrar un error posterior. Usa bases de prueba y realiza respaldos.
-2. **Índices:** la optimización está enfocada en igualdades simples, no en todos los predicados o combinaciones posibles.
-3. **Compatibilidad de datos antiguos:** el formato CSV anterior a la corrección de `NULL` no permitía distinguir siempre una cadena vacía de un valor nulo.
-4. **Gramáticas y lenguajes:** los analizadores detectan conflictos y errores; no todas las gramáticas son aptas para SLR, LALR y LL(1).
-5. **Compiscript:** ciertas construcciones aceptadas por el parser pueden no tener generación TAC completa; consulta los errores del generador y la documentación de código intermedio.
-6. **Archivos generados:** los comandos pueden producir lexers, imágenes, CSV y JSON. No confundas estos artefactos con los archivos fuente del proyecto.
-7. **Versiones:** utiliza el runtime ANTLR 4.13.2 indicado en `requirements.txt` para evitar incompatibilidades con el código generado.
+1. **Administración de bases:** `CREATE DATABASE`, `USE` y `SHOW` operan dentro de la carpeta de trabajo; no implementan usuarios, permisos ni un servidor SQL.
+2. **Ejecución SQL sin transacciones completas:** un script puede modificar archivos antes de encontrar un error posterior. Usa bases de prueba y realiza respaldos.
+3. **Índices:** la optimización está enfocada en igualdades simples, no en todos los predicados o combinaciones posibles.
+4. **Compatibilidad de datos antiguos:** el formato CSV anterior a la corrección de `NULL` no permitía distinguir siempre una cadena vacía de un valor nulo.
+5. **Gramáticas y lenguajes:** los analizadores detectan conflictos y errores; no todas las gramáticas son aptas para SLR, LALR y LL(1).
+6. **Compiscript:** ciertas construcciones aceptadas por el parser pueden no tener generación TAC completa; consulta los errores del generador y la documentación de código intermedio.
+7. **Archivos generados:** los comandos pueden producir lexers, imágenes, CSV y JSON. No confundas estos artefactos con los archivos fuente del proyecto.
+8. **Versiones:** utiliza el runtime ANTLR 4.13.2 indicado en `requirements.txt` para evitar incompatibilidades con el código generado.
 
 ## Documentación complementaria
 

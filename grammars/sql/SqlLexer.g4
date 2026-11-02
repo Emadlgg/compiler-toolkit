@@ -6,6 +6,11 @@ options { caseInsensitive = true; }
 // ── Palabras clave ────────────────────────────────────────
 CREATE  : 'CREATE';
 TABLE   : 'TABLE';
+DATABASE : 'DATABASE';
+DATABASES : 'DATABASES';
+USE : 'USE';
+SHOW : 'SHOW';
+TABLES : 'TABLES';
 DROP    : 'DROP';
 INDEX   : 'INDEX';
 ON      : 'ON';

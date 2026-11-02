@@ -29,7 +29,7 @@ from sqlengine.ast import to_tree as sql_ast_to_tree
 from sqlengine.catalog import Catalog as SqlCatalog
 from sqlengine.metadata import load_catalog as sql_load_catalog, format_metadata as sql_format_metadata, MetadataError
 from sqlengine.semantic import analyze_script as sql_analyze_script
-from sqlengine.executor import execute as sql_execute
+from sqlengine.executor import execute_with_context as sql_execute_with_context
 from sqlengine.storage import StorageError
 
 
@@ -1079,12 +1079,13 @@ class IDE(tk.Tk):
         self._status('Ejecutando SQL...', 'working')
         self.update_idletasks()
         try:
-            outputs = sql_execute(source, folder)
+            outputs, active_directory = sql_execute_with_context(source, folder)
+            self.db_path.set(active_directory)
             self._show_sql_outputs(outputs)
             self._switch_out('Resultados SQL')
             self._status('SQL ejecutado correctamente', 'ok')
             # Refrescar la vista del catálogo desde el disco, no desde una simulación.
-            catalog = sql_load_catalog(folder)
+            catalog = sql_load_catalog(active_directory)
             self._set_text('Esquema SQL', sql_format_metadata(catalog))
         except (StorageError, ValueError, OSError) as exc:
             self._show_sql_message('Error de ejecución SQL:\n' + str(exc)
@@ -1181,10 +1182,56 @@ class IDE(tk.Tk):
         except MetadataError as e:
             self._set_text('Esquema SQL', f'No se pudo leer el esquema de {folder}:\n{e}')
             return [_Located(e.line or 1, 0, f'metadata.txt no es válido: {e.message}' + (f' (línea {e.line} del archivo)' if e.line else ''))]
-        result = sql_analyze_script(script, catalog)
-        origin = f'la carpeta {os.path.basename(folder.rstrip("/\\")) or folder}' if folder else 'una base vacía'
-        self._set_text('Esquema SQL', f'# Esquema al terminar el script (se partió de {origin}; los CREATE y DROP del script se aplican en memoria)\n\n' + sql_format_metadata(result.catalog))
-        return [_Located(e.line, e.column, e.message) for e in result.errors]
+        # Analisis contextual: CREATE DATABASE y USE cambian el catalogo visible
+        # sin crear ni modificar directorios durante ANALYZE SQL.
+        from pathlib import Path
+        from sqlengine import ast as sql_ast
+        from sqlengine.database_commands import workspace, MARKER
+        db_nodes = (sql_ast.CreateDatabase, sql_ast.UseDatabase,
+                    sql_ast.ShowDatabases, sql_ast.ShowTables)
+        root, current = workspace(folder) if folder else (Path.cwd(), Path.cwd())
+        virtual = {}
+        errors = []
+        pending = []
+
+        def flush():
+            nonlocal catalog
+            if pending:
+                checked = sql_analyze_script(sql_ast.Script(list(pending)), catalog)
+                errors.extend(checked.errors)
+                catalog = checked.catalog
+                pending.clear()
+
+        for statement in script.statements:
+            if not isinstance(statement, db_nodes):
+                pending.append(statement)
+                continue
+            flush()
+            if isinstance(statement, sql_ast.CreateDatabase):
+                target = root / str(statement.name)
+                if target.exists() or str(target).lower() in virtual:
+                    errors.append(_Located(statement.line, statement.column,
+                                           f"La base de datos '{statement.name}' ya existe"))
+                else:
+                    virtual[str(target).lower()] = SqlCatalog()
+            elif isinstance(statement, sql_ast.UseDatabase):
+                target = root / str(statement.name)
+                key = str(target).lower()
+                if key in virtual:
+                    catalog = virtual[key].copy()
+                    current = target
+                elif target.is_dir() and ((target / MARKER).is_file() or (target / 'metadata.txt').is_file()):
+                    catalog = sql_load_catalog(str(target))
+                    current = target
+                else:
+                    errors.append(_Located(statement.line, statement.column,
+                                           f"La base de datos '{statement.name}' no existe"))
+            # SHOW DATABASES / SHOW TABLES no cambian el catalogo.
+        flush()
+        origin = str(current)
+        self._set_text('Esquema SQL', '# Esquema simulado al terminar el script (sin modificar archivos)\n'
+                       + f'# Base activa: {origin}\n\n' + sql_format_metadata(catalog))
+        return [_Located(e.line, e.column, e.message) for e in errors]
 
     def _show_sql_tokens(self, result):
         tokens = [t for t in result.tokens if t[0] != 'EOF']

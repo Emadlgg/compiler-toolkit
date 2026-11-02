@@ -160,6 +160,18 @@ class SemanticAnalyzer:
             self.error(f"La tabla '{name}' no existe." + _suggest(name, [t.name for t in self.catalog.tables]), name)
         return table
 
+    def check_CreateDatabase(self, s):
+        pass  # La existencia del directorio se valida con el contexto de ejecucion.
+
+    def check_UseDatabase(self, s):
+        pass  # La existencia del directorio se valida con el contexto de ejecucion.
+
+    def check_ShowDatabases(self, s):
+        pass
+
+    def check_ShowTables(self, s):
+        pass
+
     def check_CreateTable(self, s):
         if self.catalog.has_table(s.name):
             self.error(f"La tabla '{s.name}' ya existe", s.name)

@@ -75,6 +75,18 @@ class AstBuilder(SqlParserVisitor):
     def visitDropIndex(self, ctx):
         return ast.DropIndex(_name(ctx.indexName()), **_pos(ctx))
 
+    def visitCreateDatabase(self, ctx):
+        return ast.CreateDatabase(_name(ctx.databaseName()), **_pos(ctx))
+
+    def visitUseDatabase(self, ctx):
+        return ast.UseDatabase(_name(ctx.databaseName()), **_pos(ctx))
+
+    def visitShowDatabases(self, ctx):
+        return ast.ShowDatabases(**_pos(ctx))
+
+    def visitShowTables(self, ctx):
+        return ast.ShowTables(**_pos(ctx))
+
     # ── Manipulación de datos ─────────────────────────────
 
     def visitInsertStmt(self, ctx):
