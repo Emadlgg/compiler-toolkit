@@ -177,8 +177,13 @@ class CodeGenerator(CompiscriptVisitor):
         ctx = self.fctx
         while ctx is not None and not ctx.has_this:
             ctx = ctx.parent
-        hops = self.fctx.depth - ctx.depth if ctx is not None else 0
-        return Var("this", None, hops)
+        if ctx is None:
+            raise ValueError("Referencia a this fuera de un metodo")
+        hops = self.fctx.depth - ctx.depth
+        # Los metodos declarados tienen un simbolo implicito real en su scope.
+        # Los inicializadores sinteticos no tienen scope ni simbolo asociado.
+        sym = ctx.scope.lookup_local("this") if ctx.scope is not None else None
+        return Var("this", sym, hops)
 
     # ── Funciones ─────────────────────────────────────────
 
@@ -385,7 +390,9 @@ class CodeGenerator(CompiscriptVisitor):
     def visitPrintStatement(self, ctx):
         value = self.visit(ctx.expression())
         self.emit(Param(value))
-        self.emit(Call(None, "print", 1))
+        call = Call(None, "print", 1)
+        call.print_type = self.types.get(ctx.expression(), Type.ANY)
+        self.emit(call)
         self.release(value)
 
     def visitReturnStatement(self, ctx):

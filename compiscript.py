@@ -8,6 +8,9 @@ Uso:
     python compiscript.py archivo.cps --tac
     python compiscript.py archivo.cps --frames
     python compiscript.py archivo.cps --all
+  python compiscript.py archivo.cps --mips --output build/programa.asm
+    python compiscript.py archivo.cps --mips
+    python compiscript.py archivo.cps --mips --output build/programa.asm
     python compiscript.py --help
 """
 
@@ -50,6 +53,8 @@ Opciones:
   --tac        Generar y mostrar el código intermedio (TAC)
   --frames     Mostrar la organización de memoria: datos globales, clases y
                registros de activación
+  --mips       Generar ensamblador MIPS a partir del TAC
+  --output RUTA  Guardar el ensamblador en RUTA (requiere --mips)
   --all        Mostrar árbol sintáctico, tabla de símbolos, TAC y registros
   -h, --help   Mostrar esta ayuda
 
@@ -306,32 +311,47 @@ def print_tree(tree, parser, indent=0, max_depth=6):
 # ============================================================
 
 def validate_arguments(args):
-    """
-    Valida las opciones recibidas desde la línea de comandos.
-
-    Retorna:
-        True si todos los argumentos son válidos.
-        False si existe alguna opción desconocida.
-    """
-
-    valid_flags = {
-        "--tree",
-        "--symbols",
-        "--tac",
-        "--frames",
-        "--all",
-    }
-
-    for arg in args:
-
-        if arg.startswith("-") and arg not in valid_flags:
+    """Valida flags y argumento de --output sin confundir rutas con opciones."""
+    flags = {"--tree", "--symbols", "--tac", "--frames", "--all", "--mips"}
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--output":
+            if index + 1 >= len(args) or not args[index + 1].strip() or args[index + 1].startswith("--"):
+                print("Error: --output requiere una ruta.")
+                return False
+            index += 2
+            continue
+        if arg not in flags:
             print(f"Error: opción desconocida: {arg}")
-            print()
-            print("Usa:")
-            print("  python compiscript.py --help")
             return False
-
+        index += 1
+    if "--output" in args and "--mips" not in args:
+        print("Error: --output requiere --mips.")
+        return False
+    if args.count("--output") > 1:
+        print("Error: --output solo puede especificarse una vez.")
+        return False
     return True
+
+
+def compile_mips(tree, analyzer, output_path=None):
+    """Genera TAC y MIPS; no guarda archivos si alguna fase falla."""
+    from compiscript.codegen import CodeGenerator
+    from compiscript.mips import MIPSGenerator, MIPSError
+
+    intermediate = CodeGenerator(analyzer)
+    intermediate.generate(tree)
+    if intermediate.errors:
+        raise MIPSError("Errores de TAC: " + "; ".join(map(str, intermediate.errors)))
+    assembler = MIPSGenerator(intermediate.instructions, intermediate.records, analyzer.table)
+    asm = assembler.generate()
+    if output_path is not None:
+        from pathlib import Path
+        destination = Path(output_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(asm, encoding="utf-8")
+    return asm
 
 
 # ============================================================
@@ -369,6 +389,9 @@ def main():
 
     if not validate_arguments(args):
         return 1
+
+    wants_mips = "--mips" in args
+    output_path = args[args.index("--output") + 1] if "--output" in args else None
 
     show_tree = (
         "--tree" in args
@@ -420,6 +443,15 @@ def main():
     except OSError as error:
         print(f"Error al leer el archivo:")
         print(f"  {error}")
+        return 1
+
+    # Resolver modulos antes del parser existente. Los programas sin imports
+    # siguen el mismo flujo de compilacion que en los incrementos anteriores.
+    try:
+        from compiscript.modules import resolve_project, ModuleError
+        source = resolve_project(filepath)
+    except ModuleError as error:
+        print(f"Error de modulos: {error}")
         return 1
 
     # --------------------------------------------------------
@@ -527,6 +559,25 @@ def main():
             print("  No se genera código: corrige los errores primero.")
         else:
             generate_tac(tree, analyzer, show_tac, show_frames)
+
+    # --------------------------------------------------------
+    # GENERACIÓN MIPS
+    # --------------------------------------------------------
+    if wants_mips:
+        if syntax_errors or analyzer.errors:
+            print("  No se genera MIPS: corrige los errores primero.")
+        else:
+            try:
+                from compiscript.mips import MIPSError
+                asm = compile_mips(tree, analyzer, output_path)
+            except (MIPSError, ValueError, OSError) as error:
+                print(f"Error de generación MIPS: {error}")
+                return 1
+            if output_path:
+                print(f"  MIPS guardado en: {output_path}")
+            else:
+                print("\n── CÓDIGO MIPS ──\n")
+                print(asm)
 
     # --------------------------------------------------------
     # Footer

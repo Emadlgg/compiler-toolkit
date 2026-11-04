@@ -6,6 +6,7 @@ Layout: sidebar + editor central + panel de output inferior
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import sys, os, threading, importlib.util, re, subprocess
+from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from yapar.yapar_parser import YAParParser
 from yapar.first_follow import compute_first, compute_follow
@@ -134,6 +135,8 @@ class IDE(tk.Tk):
         self._sidebar_actions['COMPILE CPS'] = self._action_btn(sb, '◆   COMPILE CPS', self._run_compiscript, C['purple'])
         self._sidebar_actions['ANALYZE SQL'] = self._action_btn(sb, '◇   ANALYZE SQL', self._run_sql, C['blue'])
         self._sidebar_actions['EXECUTE SQL'] = self._action_btn(sb, '▶   EXECUTE SQL', self._execute_sql, C['green'])
+        self._sidebar_actions['BUILD MIPS'] = self._action_btn(sb, '◆   BUILD MIPS', self._build_cps_mips, C['purple'])
+        self._sidebar_actions['RUN MIPS'] = self._action_btn(sb, '▶   RUN MIPS', self._run_cps_mips, C['green'])
         self._sidebar_actions['TEST CPS'] = self._action_btn(sb, '✔   TEST CPS', self._run_cps_tests, C['green'])
         self._sidebar_actions['SAVE'] = self._action_btn(sb, '▣   SAVE', self._save, C['blue'])
         self._sidebar_sections['session_divider'] = self._divider(sb)
@@ -393,7 +396,7 @@ class IDE(tk.Tk):
             'YALex': ('SAVE',),
             'YAPar': ('RUN', 'RUN ALL', 'SAVE'),
             'Entrada': ('RUN', 'RUN ALL', 'SAVE'),
-            'Compiscript': ('COMPILE CPS', 'TEST CPS', 'SAVE'),
+            'Compiscript': ('COMPILE CPS', 'BUILD MIPS', 'RUN MIPS', 'TEST CPS', 'SAVE'),
             'SQL': ('ANALYZE SQL', 'EXECUTE SQL', 'SAVE'),
         }
         # Se conserva el orden original del panel lateral.
@@ -459,7 +462,7 @@ class IDE(tk.Tk):
         self.out_frames = {}
         self.out_btns = {}
         self.active_out = tk.StringVar(value='Resultado')
-        tabs = [('Resultado', C['green']), ('Tokens', C['amber']), ('SLR(1)', C['green']), ('LALR', C['blue']), ('LL(1)', C['purple']), ('LR(0)', C['amber']), ('FIRST/FOLLOW', C['text2']), ('YALex Rules', C['green']), ('Grammar YAPar', C['blue']), ('Tokens CPS', C['amber']), ('Árbol CPS', C['purple']), ('Errores Léxicos', C['amber']), ('Errores Sintácticos', C['blue']), ('Errores Semánticos', C['red']), ('Símbolos', C['blue']), ('TAC CPS', C['green']), ('Memoria CPS', C['purple']), ('Pruebas CPS', C['amber']), ('Tokens SQL', C['amber']), ('Árbol SQL', C['purple']), ('AST SQL', C['green']), ('Esquema SQL', C['blue']), ('Resultados SQL', C['green']), ('Language CPS', C['green']), ('Grammar CPS', C['amber'])]
+        tabs = [('Resultado', C['green']), ('Tokens', C['amber']), ('SLR(1)', C['green']), ('LALR', C['blue']), ('LL(1)', C['purple']), ('LR(0)', C['amber']), ('FIRST/FOLLOW', C['text2']), ('YALex Rules', C['green']), ('Grammar YAPar', C['blue']), ('Tokens CPS', C['amber']), ('Árbol CPS', C['purple']), ('Errores Léxicos', C['amber']), ('Errores Sintácticos', C['blue']), ('Errores Semánticos', C['red']), ('Símbolos', C['blue']), ('TAC CPS', C['green']), ('Memoria CPS', C['purple']), ('MIPS CPS', C['green']), ('Consola MIPS', C['amber']), ('Pruebas CPS', C['amber']), ('Tokens SQL', C['amber']), ('Árbol SQL', C['purple']), ('AST SQL', C['green']), ('Esquema SQL', C['blue']), ('Resultados SQL', C['green']), ('Language CPS', C['green']), ('Grammar CPS', C['amber'])]
         out_container = tk.Frame(panel, bg=C['bg1'])
         out_container.pack(fill=tk.BOTH, expand=True)
         for name, color in tabs:
@@ -500,7 +503,7 @@ class IDE(tk.Tk):
 
     def _update_context_tabs(self, editor_tab):
         """Muestra solo las herramientas relevantes al modulo seleccionado."""
-        cps_tabs = {'Tokens CPS', 'Árbol CPS', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos', 'Símbolos', 'TAC CPS', 'Memoria CPS', 'Pruebas CPS', 'Language CPS', 'Grammar CPS'}
+        cps_tabs = {'Tokens CPS', 'Árbol CPS', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos', 'Símbolos', 'TAC CPS', 'Memoria CPS', 'MIPS CPS', 'Consola MIPS', 'Pruebas CPS', 'Language CPS', 'Grammar CPS'}
         sql_tabs = {'Tokens SQL', 'Árbol SQL', 'AST SQL', 'Esquema SQL', 'Resultados SQL', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos'}
         yal_tabs = {'Tokens', 'YALex Rules'}
         yapar_tabs = {'Resultado', 'SLR(1)', 'LALR', 'LL(1)', 'LR(0)', 'FIRST/FOLLOW', 'Grammar YAPar'}
@@ -1257,6 +1260,61 @@ class IDE(tk.Tk):
         canvas.create_text(30, 40, text=message, fill=C['text3'], font=('Consolas', 10), anchor='w')
         canvas.configure(scrollregion=(0, 0, 900, 120))
 
+    def _build_cps_mips(self):
+        self._start_cps_mips(run=False)
+
+    def _run_cps_mips(self):
+        self._start_cps_mips(run=True)
+
+    def _start_cps_mips(self, run=False):
+        """Guarda el editor antes de compilar; las importaciones son relativas al archivo."""
+        if getattr(self, '_mips_busy', False):
+            messagebox.showinfo('Compiscript', 'Ya hay una compilación MIPS en curso.')
+            return
+        source = self._get_editor('Compiscript')
+        if not source:
+            messagebox.showwarning('Compiscript', 'Escribe o abre un archivo .cps primero.')
+            return
+        path = self.cps_path.get().strip()
+        if not path:
+            path = filedialog.asksaveasfilename(title='Guardar programa Compiscript',
+                defaultextension='.cps', filetypes=[('Compiscript', '*.cps')])
+            if not path:
+                return
+            self.cps_path.set(path)
+        try:
+            from gui.cps_source import save_and_resolve
+            save_and_resolve(path, source)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror('Error al guardar Compiscript', str(exc))
+            return
+        output = Path(path).resolve().parent / 'build' / (Path(path).stem + '.asm')
+        self._mips_busy = True
+        self._set_text('Consola MIPS', 'Compilando...')
+        self._switch_out('Consola MIPS')
+        self._status('generating MIPS...', 'working')
+        threading.Thread(target=self._cps_mips_worker,
+            args=(str(Path(path).resolve()), str(output), run), daemon=True).start()
+
+    def _cps_mips_worker(self, source, output, run):
+        """Ejecuta el CLI existente: mismo resolvedor de imports y mismo backend."""
+        from gui.mips_runner import compile_and_run
+        result = compile_and_run(source, output, run=run)
+        self.after(0, lambda: self._finish_cps_mips(result, output))
+
+    def _finish_cps_mips(self, result, output):
+        self._mips_busy = False
+        self._set_text('Consola MIPS', result.log)
+        if result.asm is not None:
+            self._set_text('MIPS CPS', result.asm)
+            self._status('MIPS generated' if result.ok else 'MARS execution failed',
+                         'ok' if result.ok else 'error')
+            self._switch_out('Consola MIPS' if result.executed else 'MIPS CPS')
+        else:
+            self._set_text('MIPS CPS', 'Sin ensamblador: corrige los errores de compilación.')
+            self._status('MIPS compilation failed', 'error')
+            self._switch_out('Consola MIPS')
+
     def _run_compiscript(self):
         """Compila el contenido del editor Compiscript en un hilo separado."""
         threading.Thread(target=self._analyze_compiscript, daemon=True).start()
@@ -1272,6 +1330,27 @@ class IDE(tk.Tk):
             if not source:
                 self._show_cps_problems([], [], [], empty_message='Carga o escribe código .cps primero')
                 self._status('missing .cps source', 'error')
+                self._switch_out('Errores Semánticos')
+                return
+
+            # Usar el mismo resolvedor que el CLI y compilar el contenido actual.
+            path = self.cps_path.get().strip()
+            if not path:
+                path = filedialog.asksaveasfilename(
+                    title='Guardar programa Compiscript', defaultextension='.cps',
+                    filetypes=[('Compiscript', '*.cps')])
+                if not path:
+                    self._status('Compilación cancelada', 'error')
+                    return
+                self.cps_path.set(path)
+            from gui.cps_source import save_and_resolve
+            from compiscript.modules import ModuleError
+            try:
+                source = save_and_resolve(path, source)
+            except (ModuleError, OSError, ValueError) as exc:
+                self._show_cps_problems([], [], [], empty_message=f'Error de módulos: {exc}')
+                self.stat_vars['conflicts'].set('1')
+                self._status('CPS: error de módulos', 'error')
                 self._switch_out('Errores Semánticos')
                 return
 
@@ -1337,7 +1416,7 @@ class IDE(tk.Tk):
         except Exception as e:
             import traceback
             self._show_cps_problems([], [], [], empty_message=f'EXCEPTION: {e}')
-            print(traceback.format_exc())
+            self._set_text('Consola MIPS', traceback.format_exc())
             self._status(f'CPS error: {e}', 'error')
             self._switch_out('Errores Semánticos')
 
