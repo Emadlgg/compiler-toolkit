@@ -136,6 +136,7 @@ leftHandSide
 primaryAtom
   : Identifier                                 # IdentifierExpr
   | 'new' Identifier '(' arguments? ')'        # NewExpr
+  | 'new' baseType '[' expression ']'          # NewArrayExpr
   | 'this'                                     # ThisExpr
   ;
 

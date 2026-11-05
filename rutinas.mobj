@@ -1,0 +1,1 @@
+{"exports": ["suma"], "format": "compiscript-mips-object-v1", "sha256": "40ce3d91c41fc76e342de6f461badaee1a8d785d2f6059948aab28fd8ca2c02c", "text": "suma:\n    addu $v0, $a0, $a1\n    jr $ra\n"}

@@ -1,10 +1,11 @@
-"""Prueba real de MIPS opcional: requiere MARS_JAR apuntando a Mars.jar."""
+"""Prueba real de MIPS con deteccion automatica de tools/Mars.jar."""
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
+from compiscript.mars import find_mars, java_available
 from compiscript.activation_record import ActivationRecord
 from compiscript.mips import MIPSGenerator
 from compiscript.tac import (Binary, Call, Const, Enter, FuncBegin, Halt,
@@ -41,11 +42,10 @@ class TestMARSSmoke(unittest.TestCase):
         self.assertIn('li $v0, 9', asm)
         self.assertIn('.globl main', asm)
 
-    @unittest.skipUnless(os.environ.get('MARS_JAR'), 'Definir MARS_JAR para ejecutar en MARS')
     def test_execute_mars(self):
-        jar = Path(os.environ['MARS_JAR'])
-        if not jar.is_file():
-            self.fail(f'MARS_JAR no existe: {jar}')
+        jar = find_mars()
+        if jar is None or not java_available():
+            self.skipTest('MARS o Java no disponible')
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'smoke.asm'
             source.write_text(smoke_program(), encoding='utf-8')

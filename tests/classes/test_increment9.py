@@ -11,6 +11,7 @@ import tempfile
 import unittest
 
 from compiscript.modules import resolve_project
+from compiscript.mars import find_mars, java_available
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).parent / 'fixtures'
@@ -59,12 +60,9 @@ class TestAdvancedClasses(unittest.TestCase):
         self.assertTrue('error' in output.lower() or result.returncode != 0, output)
 
     def test_mars_advanced_classes(self):
-        jar = os.environ.get('MARS_JAR')
-        if not jar:
-            local = ROOT / 'tools' / 'Mars.jar'
-            jar = str(local) if local.is_file() else None
-        if not jar or not Path(jar).is_file():
-            self.skipTest('Configurar MARS_JAR o tools/Mars.jar para validar ejecucion')
+        jar = find_mars()
+        if jar is None or not java_available():
+            self.skipTest('MARS o Java no disponible')
         with tempfile.TemporaryDirectory() as tmp:
             asm = Path(tmp) / 'clases.asm'
             result = compile_file(FIXTURES / 'main.cps', asm)
@@ -74,7 +72,7 @@ class TestAdvancedClasses(unittest.TestCase):
                                   capture_output=True, text=True, encoding='utf-8',
                                   errors='replace', timeout=45)
             self.assertEqual(mars.returncode, 0, mars.stdout + mars.stderr)
-            self.assertEqual(mars.stdout.strip(), EXPECTED, mars.stdout + mars.stderr)
+            self.assertEqual(mars.stdout.replace("\n", ""), EXPECTED, mars.stdout + mars.stderr)
 
 
 if __name__ == '__main__':

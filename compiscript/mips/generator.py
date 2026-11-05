@@ -6,15 +6,34 @@ from compiscript import tac
 from compiscript.symbol_table import Type
 from .emitter import MIPSEmitter
 from .frames import FrameManager
-from .registers import RegisterAllocator
+from .registers import RegisterAllocator, SAVED_REGISTERS
 
 
 class MIPSError(Exception):
     pass
 
 
+_ESCAPES = {'n': 10, 't': 9, 'r': 13, '0': 0, '\\': 92, '"': 34, "'": 39}
+
+
+def encode_string(value):
+    """Interpreta \\n, \\t, etc. y devuelve bytes UTF-8 terminados en NUL."""
+    out = bytearray()
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch == '\\' and i + 1 < len(value) and value[i + 1] in _ESCAPES:
+            out.append(_ESCAPES[value[i + 1]])
+            i += 2
+            continue
+        out.extend(ch.encode('utf-8'))
+        i += 1
+    out.append(0)
+    return bytes(out)
+
+
 class MIPSGenerator:
-    def __init__(self, instructions, records, symbol_table=None):
+    def __init__(self, instructions, records, symbol_table=None, external_labels=None):
         self.instructions = instructions
         self.records = {r.label: r for r in records}
         self.table = symbol_table
@@ -24,9 +43,87 @@ class MIPSGenerator:
         self.pending = []
         self.strings = {}
         self.labels = {i.label: i for i in instructions if isinstance(i, tac.FuncBegin)}
+        # Only ABI-verified library exports may be called without a TAC body.
+        self.external_labels = frozenset(external_labels or ())
+        duplicate = self.external_labels.intersection(self.labels)
+        if duplicate:
+            raise MIPSError('Etiqueta externa tambien definida localmente: ' + ', '.join(sorted(duplicate)))
+        missing = self.external_labels.difference(self.records)
+        if missing:
+            raise MIPSError('Registro de activacion externo ausente: ' + ', '.join(sorted(missing)))
         self.value_types = {}
         self.needs_concat = False
         self.needs_print_bool = False
+        # label -> [(simbolo, '$sN')]: variables que viven en registros $s.
+        self.saved_plan = {}
+        self._sreg = {}
+
+    # ── Asignacion de registros $s (variables locales / parametros) ──────
+
+    @staticmethod
+    def _vars_of(instr):
+        return [v for v in vars(instr).values() if isinstance(v, tac.Var)]
+
+    def _plan_saved_registers(self):
+        """Elige, por funcion, hasta 8 variables para guardarlas en $s0-$s7.
+
+        Criterios: solo locales/parametros accedidos desde su propia funcion;
+        nunca las que otra funcion anidada alcanza por enlace estatico (esas
+        deben seguir en memoria); se prefieren las mas usadas, contando x10
+        cada nivel de bucle (salto hacia atras).
+        """
+        funcs, current = {}, None
+        for ins in self.instructions:
+            if isinstance(ins, tac.FuncBegin):
+                current = ins.label
+                funcs[current] = []
+            elif current is not None:
+                funcs[current].append(ins)
+        captured, synthetic_this = set(), set()
+        for label, body in funcs.items():
+            for ins in body:
+                for v in self._vars_of(ins):
+                    if v.sym is None and v.name == 'this':
+                        synthetic_this.add(label)
+                    elif v.sym is not None and v.hops:
+                        captured.add(id(v.sym))
+        self.saved_plan, self._sreg = {}, {}
+        for label, body in funcs.items():
+            weight = self._loop_weights(body)
+            usage = {}
+            for idx, ins in enumerate(body):
+                for v in self._vars_of(ins):
+                    sym = v.sym
+                    if (sym is None or v.hops or id(sym) in captured or sym.offset is None
+                            or sym.storage not in ('local', 'param')):
+                        continue
+                    if label in synthetic_this and sym.offset == 16:
+                        continue
+                    entry = usage.setdefault(id(sym), [sym, 0])
+                    entry[1] += weight[idx]
+            ranked = sorted((e for e in usage.values() if e[1] >= 2),
+                            key=lambda e: (-e[1], e[0].offset))[:len(SAVED_REGISTERS)]
+            allocator = RegisterAllocator(registers=SAVED_REGISTERS)
+            plan = [(sym, allocator.getReg(owner=id(sym))) for sym, _ in ranked]
+            self.saved_plan[label] = plan
+            self._sreg[label] = {id(sym): reg for sym, reg in plan}
+
+    @staticmethod
+    def _loop_weights(body):
+        weight = [1] * len(body)
+        position = {ins.name: k for k, ins in enumerate(body) if isinstance(ins, tac.Label)}
+        for j, ins in enumerate(body):
+            if isinstance(ins, (tac.Goto, tac.IfGoto, tac.IfRel)):
+                start = position.get(ins.label)
+                if start is not None and start <= j:
+                    for k in range(start, j + 1):
+                        weight[k] *= 10
+        return weight
+
+    def _sreg_of(self, op):
+        if isinstance(op, tac.Var) and op.sym is not None and not op.hops and self.current:
+            return self._sreg.get(self.current, {}).get(id(op.sym))
+        return None
 
     def emit(self, *lines):
         self.emitter.emit(*lines)
@@ -72,18 +169,24 @@ class MIPSGenerator:
                 if v not in self.strings:
                     name = f'_str_{len(self.strings)}'
                     self.strings[v] = name
-                    encoded = v.encode('utf-8') + b'\0'
-                    self.emitter.data.append(f'{name}: .byte ' + ', '.join(map(str, encoded)))
+                    encoded = encode_string(v)
+                    # MARS espera bytes con signo: evita advertencias con UTF-8.
+                    self.emitter.data.append(f'{name}: .byte ' + ', '.join(str(b - 256 if b > 127 else b) for b in encoded))
                 self.emit(f'  la {reg}, {self.strings[v]}')
             elif v is None:
                 self.emit(f'  move {reg}, $zero')
             else:
                 self.emit(f'  li {reg}, {int(v)}')
+        elif self._sreg_of(op):
+            self.emit(f'  move {reg}, {self._sreg_of(op)}')
         else:
             offset, base = self._slot(op)
             self.emit(f'  lw {reg}, {offset}({base})')
 
     def _store(self, op, reg):
+        if self._sreg_of(op):
+            self.emit(f'  move {self._sreg_of(op)}, {reg}')
+            return
         offset, base = self._slot(op)
         self.emit(f'  sw {reg}, {offset}({base})')
 
@@ -100,6 +203,9 @@ class MIPSGenerator:
         if op is not None:
             self.value_types[(self.current, str(op))] = typ
 
+    def _both_strings(self, left, right):
+        return self._type_of(left) == Type.STRING and self._type_of(right) == Type.STRING
+
     def _binary(self, instr):
         if instr.op == 'concat':
             self._load(instr.left, '$a0')
@@ -109,6 +215,16 @@ class MIPSGenerator:
             self._store(instr.dest, '$v0')
             self._set_type(instr.dest, Type.STRING)
             self.needs_concat = True
+            return
+        if instr.op in ('==', '!=') and self._both_strings(instr.left, instr.right):
+            self._load(instr.left, '$a0')
+            self._load(instr.right, '$a1')
+            self.emit('  jal _mips_streq')
+            if instr.op == '!=':
+                self.emit('  xori $v0, $v0, 1')
+            self._store(instr.dest, '$v0')
+            self._set_type(instr.dest, Type.BOOLEAN)
+            self.needs_streq = True
             return
         a, b, c = (self.regs.getReg() for _ in range(3))
         self._load(instr.left, a)
@@ -140,7 +256,8 @@ class MIPSGenerator:
             self._load(args[0], '$a0')
             typ = getattr(instr, 'print_type', None) or self._type_of(args[0])
             if typ == Type.STRING:
-                self.emit('  li $v0, 4', '  syscall')
+                self.emit('  jal _mips_print_str')
+                self.needs_print_str = True
             elif typ == Type.BOOLEAN:
                 self.emit('  jal _mips_print_bool')
                 self.needs_print_bool = True
@@ -148,8 +265,10 @@ class MIPSGenerator:
                 self.emit('  li $v0, 1', '  syscall')
             else:
                 raise MIPSError(f'print no soporta el tipo {typ}')
+            # print() de Compiscript termina la linea (igual que el interprete de TAC).
+            self.emit('  li $v0, 11', '  li $a0, 10', '  syscall')
             return
-        if instr.target not in self.labels:
+        if instr.target not in self.labels and instr.target not in self.external_labels:
             raise MIPSError(f'Función desconocida: {instr.target}')
         size = self._size(instr.target)
         try:
@@ -171,8 +290,10 @@ class MIPSGenerator:
         # Los operandos de parámetros se leen respecto al marco llamador,
         # que sigue disponible mediante $fp.
         for index, arg in enumerate(args):
-            self._load(arg, '$t0')
-            self.emit(f'  sw $t0, {16 + index * 4}($sp)')
+            r = self.regs.getReg()
+            self._load(arg, r)
+            self.emit(f'  sw {r}, {16 + index * 4}($sp)')
+            self.regs.release(r)
         self.emit(f'  jal {instr.target}')
         if instr.dest is not None:
             self._store(instr.dest, '$v0')
@@ -268,6 +389,15 @@ class MIPSGenerator:
                 self.emit(*FrameManager.reserve(self._size(i.label)), '  move $fp, $sp')
             else:
                 self.emit('  move $fp, $sp', '  sw $ra, 4($fp)')
+                plan = self.saved_plan.get(i.label, [])
+                if plan:
+                    # Registros preservados: se guardan bajo $fp (zona libre de la pila).
+                    self.emit(f'  addiu $sp, $sp, -{4 * len(plan)}')
+                    for k, (sym, reg) in enumerate(plan):
+                        self.emit(f'  sw {reg}, {-4 * (k + 1)}($fp)')
+                    for sym, reg in plan:
+                        if sym.storage == 'param':
+                            self.emit(f'  lw {reg}, {sym.offset}($fp)')
         elif isinstance(i, tac.Enter):
             if i.size > self._size(self.current):
                 raise MIPSError(f'Marco insuficiente: {self.current}')
@@ -296,15 +426,25 @@ class MIPSGenerator:
         elif isinstance(i, tac.Goto):
             self.emit(f'  j {i.label}')
         elif isinstance(i, tac.IfGoto):
-            self._load(i.cond, '$t0')
-            self.emit(f'  {"beq" if i.negate else "bne"} $t0, $zero, {i.label}')
+            r = self.regs.getReg()
+            self._load(i.cond, r)
+            self.emit(f'  {"beq" if i.negate else "bne"} {r}, $zero, {i.label}')
+            self.regs.release(r)
+        elif isinstance(i, tac.IfRel) and i.op in ('==', '!=') and self._both_strings(i.left, i.right):
+            self._load(i.left, '$a0')
+            self._load(i.right, '$a1')
+            self.emit('  jal _mips_streq')
+            self.needs_streq = True
+            self.emit(f'  {"bne" if i.op == "==" else "beq"} $v0, $zero, {i.label}')
         elif isinstance(i, tac.IfRel):
-            self._load(i.left, '$t0')
-            self._load(i.right, '$t1')
+            a, b = self.regs.getReg(), self.regs.getReg()
+            self._load(i.left, a)
+            self._load(i.right, b)
             mapping = {'==':'beq','!=':'bne','<':'blt','<=':'ble','>':'bgt','>=':'bge'}
             if i.op not in mapping:
                 raise MIPSError(f'Comparación desconocida: {i.op}')
-            self.emit(f'  {mapping[i.op]} $t0, $t1, {i.label}')
+            self.emit(f'  {mapping[i.op]} {a}, {b}, {i.label}')
+            self.regs.release(a, b)
         elif isinstance(i, tac.Param):
             self.pending.append(i.value)
         elif isinstance(i, tac.Call):
@@ -317,6 +457,8 @@ class MIPSGenerator:
             if self.current == 'main':
                 self.emit('  li $v0, 10', '  syscall')
             else:
+                for k, (sym, reg) in enumerate(self.saved_plan.get(self.current, [])):
+                    self.emit(f'  lw {reg}, {-4 * (k + 1)}($fp)')
                 self.emit('  sw $v0, 0($fp)', '  lw $ra, 4($fp)', '  lw $t9, 8($fp)',
                           *FrameManager.restore(self._size(self.current)),
                           '  move $fp, $t9', '  jr $ra')
@@ -337,7 +479,10 @@ class MIPSGenerator:
         self.value_types.clear()
         self.needs_concat = False
         self.needs_print_bool = False
+        self.needs_print_str = False
+        self.needs_streq = False
         self.regs.clear()
+        self._plan_saved_registers()
         if 'main' not in self.labels:
             raise MIPSError('La primera versión requiere la etiqueta main')
         self.emitter.data.append('_globals: .space ' + str(max(4, self.table.global_size() if self.table else 4)))
@@ -369,6 +514,25 @@ class MIPSGenerator:
                       '_mips_bool_emit:', '  li $v0, 4', '  syscall', '  jr $ra')
         if self.needs_concat:
             self._emit_concat_runtime()
+        if self.needs_print_str:
+            self.emitter.data.append('_mips_null_text: .asciiz "null"')
+            self.emit('_mips_print_str:', '  bne $a0, $zero, _mips_print_str_go',
+                      '  la $a0, _mips_null_text', '_mips_print_str_go:',
+                      '  li $v0, 4', '  syscall', '  jr $ra')
+        if self.needs_streq:
+            # a0, a1: cadenas con NUL. v0 = 1 si son iguales (null == null tambien).
+            self.emit('_mips_streq:',
+                      '  beq $a0, $a1, _mips_streq_yes',
+                      '  beq $a0, $zero, _mips_streq_no',
+                      '  beq $a1, $zero, _mips_streq_no',
+                      '_mips_streq_loop:',
+                      '  lbu $t0, 0($a0)', '  lbu $t1, 0($a1)',
+                      '  bne $t0, $t1, _mips_streq_no',
+                      '  beq $t0, $zero, _mips_streq_yes',
+                      '  addiu $a0, $a0, 1', '  addiu $a1, $a1, 1',
+                      '  j _mips_streq_loop',
+                      '_mips_streq_yes:', '  li $v0, 1', '  jr $ra',
+                      '_mips_streq_no:', '  move $v0, $zero', '  jr $ra')
         return self.emitter.render()
 
     def _emit_concat_runtime(self):

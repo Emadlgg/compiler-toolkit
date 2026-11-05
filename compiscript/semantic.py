@@ -787,6 +787,19 @@ class SemanticAnalyzer(CompiscriptVisitor):
             return sym.name
         return sym.type
 
+    def visitNewArrayExpr(self, ctx):
+        element = self._resolve_type(ctx.baseType())
+        size_type = self.visit(ctx.expression())
+        if size_type not in (Type.INTEGER, Type.UNKNOWN):
+            self.error(TypeMismatchError(Type.INTEGER, size_type, self._line(ctx), self._col(ctx)))
+        if element in (Type.VOID, Type.NULL, Type.UNKNOWN):
+            self.error(SemanticError(f"Tipo de elemento no válido para arreglo: {element}", self._line(ctx), self._col(ctx)))
+        elif element not in (Type.INTEGER, Type.BOOLEAN, Type.STRING, Type.ANY):
+            cls = self.table.lookup(element)
+            if cls is None or cls.kind != 'class':
+                self.error(UndeclaredClassError(element, self._line(ctx), self._col(ctx)))
+        return Type.array_of(element)
+
     def visitNewExpr(self, ctx):
         line, col = (self._line(ctx), self._col(ctx))
         class_name = ctx.Identifier().getText()

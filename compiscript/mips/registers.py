@@ -1,9 +1,16 @@
-"""Asignador determinista de registros temporales MIPS.
+"""Asignador determinista de registros MIPS.
 
-Los valores del backend se almacenan en sus slots de pila al terminar cada
-instruccion TAC. Los registros son scratch; el asignador tambien permite
-expulsion con callback para futuros valores residentes.
+Dos conjuntos, un mismo algoritmo getReg():
+  * $t0-$t7 (por defecto): scratch dentro de una instruccion TAC. Los valores
+    temporales se guardan en su slot de pila al terminar la instruccion.
+  * $s0-$s7 (SAVED_REGISTERS): variables locales y parametros "calientes" que
+    viven en registro durante toda la funcion (el llamado los guarda y los
+    restaura, porque son registros preservados).
+Si no quedan registros libres se expulsa uno (callback `spill`) hacia la pila.
 """
+
+TEMP_REGISTERS = tuple(f'$t{i}' for i in range(8))
+SAVED_REGISTERS = tuple(f'$s{i}' for i in range(8))
 
 
 class RegisterAllocationError(RuntimeError):
@@ -11,9 +18,10 @@ class RegisterAllocationError(RuntimeError):
 
 
 class RegisterAllocator:
-    REGISTERS = tuple(f'$t{i}' for i in range(8))
+    REGISTERS = TEMP_REGISTERS
 
-    def __init__(self, spill=None):
+    def __init__(self, spill=None, registers=None):
+        self.registers = tuple(registers) if registers else self.REGISTERS
         self.used = set()
         self.owners = {}
         self.dirty = set()
@@ -27,13 +35,13 @@ class RegisterAllocator:
                     if dirty:
                         self.dirty.add(reg)
                     return reg
-        for reg in self.REGISTERS:
+        for reg in self.registers:
             if reg not in self.used:
                 return self._claim(reg, owner, dirty)
         if self.spill is None:
             raise RegisterAllocationError('Sin registros: falta callback de spill')
-        reg = self.REGISTERS[self._next_victim]
-        self._next_victim = (self._next_victim + 1) % len(self.REGISTERS)
+        reg = self.registers[self._next_victim]
+        self._next_victim = (self._next_victim + 1) % len(self.registers)
         if reg in self.dirty:
             if reg not in self.owners:
                 raise RegisterAllocationError('Registro sucio sin propietario')
@@ -59,7 +67,7 @@ class RegisterAllocator:
     def flush(self):
         if self.dirty and self.spill is None:
             raise RegisterAllocationError('No se pueden guardar registros sin callback')
-        for reg in self.REGISTERS:
+        for reg in self.registers:
             if reg in self.dirty:
                 self.spill(self.owners[reg], reg)
                 self.dirty.remove(reg)

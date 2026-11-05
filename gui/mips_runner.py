@@ -1,5 +1,6 @@
 """Integración CLI -> MIPS -> MARS para el IDE, sin dependencias de Tkinter."""
 from dataclasses import dataclass
+from compiscript.mars import find_mars, java_available
 from pathlib import Path
 import os
 import subprocess
@@ -41,9 +42,11 @@ def compile_and_run(source, output, run=False, mars_jar=None, timeout=60):
     log += f'\n\nEnsamblador: {output}'
     if not run:
         return MIPSResult(True, asm, log)
-    jar = mars_jar or os.environ.get('MARS_JAR') or str(ROOT / 'tools' / 'Mars.jar')
-    if not Path(jar).is_file():
+    jar = find_mars(explicit=mars_jar)
+    if jar is None:
         return MIPSResult(False, asm, log + '\nMARS no encontrado. Configura MARS_JAR o coloca tools/Mars.jar.', True)
+    if not java_available():
+        return MIPSResult(False, asm, log + '\nJava no esta disponible en PATH.', True)
     try:
         execution = subprocess.run(['java', '-jar', str(jar), 'nc', str(output)],
                                    cwd=str(ROOT), capture_output=True, text=True,

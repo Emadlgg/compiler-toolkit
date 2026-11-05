@@ -1,4 +1,4 @@
-# Generated from grammars/compiscript/Compiscript.g4 by ANTLR 4.13.2
+# Generated from Compiscript.g4 by ANTLR 4.13.2
 from antlr4 import *
 if "." in __name__:
     from .CompiscriptParser import CompiscriptParser
@@ -226,6 +226,11 @@ class CompiscriptVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by CompiscriptParser#NewExpr.
     def visitNewExpr(self, ctx:CompiscriptParser.NewExprContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by CompiscriptParser#NewArrayExpr.
+    def visitNewArrayExpr(self, ctx:CompiscriptParser.NewArrayExprContext):
         return self.visitChildren(ctx)
 
 

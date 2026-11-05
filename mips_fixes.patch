@@ -1,0 +1,190 @@
+diff -ruN '--exclude=__pycache__' '--exclude=.git' '--exclude=build' '--exclude=*.pyc' a/compiscript/mips/generator.py b/compiscript/mips/generator.py
+--- a/compiscript/mips/generator.py	2026-11-04 20:51:44.000000000 +0000
++++ b/compiscript/mips/generator.py	2026-11-04 21:21:56.195107851 +0000
+@@ -13,6 +13,25 @@
+     pass
+ 
+ 
++_ESCAPES = {'n': 10, 't': 9, 'r': 13, '0': 0, '\\': 92, '"': 34, "'": 39}
++
++
++def encode_string(value):
++    """Interpreta \\n, \\t, etc. y devuelve bytes UTF-8 terminados en NUL."""
++    out = bytearray()
++    i = 0
++    while i < len(value):
++        ch = value[i]
++        if ch == '\\' and i + 1 < len(value) and value[i + 1] in _ESCAPES:
++            out.append(_ESCAPES[value[i + 1]])
++            i += 2
++            continue
++        out.extend(ch.encode('utf-8'))
++        i += 1
++    out.append(0)
++    return bytes(out)
++
++
+ class MIPSGenerator:
+     def __init__(self, instructions, records, symbol_table=None, external_labels=None):
+         self.instructions = instructions
+@@ -80,8 +99,9 @@
+                 if v not in self.strings:
+                     name = f'_str_{len(self.strings)}'
+                     self.strings[v] = name
+-                    encoded = v.encode('utf-8') + b'\0'
+-                    self.emitter.data.append(f'{name}: .byte ' + ', '.join(map(str, encoded)))
++                    encoded = encode_string(v)
++                    # MARS espera bytes con signo: evita advertencias con UTF-8.
++                    self.emitter.data.append(f'{name}: .byte ' + ', '.join(str(b - 256 if b > 127 else b) for b in encoded))
+                 self.emit(f'  la {reg}, {self.strings[v]}')
+             elif v is None:
+                 self.emit(f'  move {reg}, $zero')
+@@ -108,6 +128,9 @@
+         if op is not None:
+             self.value_types[(self.current, str(op))] = typ
+ 
++    def _both_strings(self, left, right):
++        return self._type_of(left) == Type.STRING and self._type_of(right) == Type.STRING
++
+     def _binary(self, instr):
+         if instr.op == 'concat':
+             self._load(instr.left, '$a0')
+@@ -118,6 +141,16 @@
+             self._set_type(instr.dest, Type.STRING)
+             self.needs_concat = True
+             return
++        if instr.op in ('==', '!=') and self._both_strings(instr.left, instr.right):
++            self._load(instr.left, '$a0')
++            self._load(instr.right, '$a1')
++            self.emit('  jal _mips_streq')
++            if instr.op == '!=':
++                self.emit('  xori $v0, $v0, 1')
++            self._store(instr.dest, '$v0')
++            self._set_type(instr.dest, Type.BOOLEAN)
++            self.needs_streq = True
++            return
+         a, b, c = (self.regs.getReg() for _ in range(3))
+         self._load(instr.left, a)
+         self._load(instr.right, b)
+@@ -148,7 +181,8 @@
+             self._load(args[0], '$a0')
+             typ = getattr(instr, 'print_type', None) or self._type_of(args[0])
+             if typ == Type.STRING:
+-                self.emit('  li $v0, 4', '  syscall')
++                self.emit('  jal _mips_print_str')
++                self.needs_print_str = True
+             elif typ == Type.BOOLEAN:
+                 self.emit('  jal _mips_print_bool')
+                 self.needs_print_bool = True
+@@ -156,6 +190,8 @@
+                 self.emit('  li $v0, 1', '  syscall')
+             else:
+                 raise MIPSError(f'print no soporta el tipo {typ}')
++            # print() de Compiscript termina la linea (igual que el interprete de TAC).
++            self.emit('  li $v0, 11', '  li $a0, 10', '  syscall')
+             return
+         if instr.target not in self.labels and instr.target not in self.external_labels:
+             raise MIPSError(f'Función desconocida: {instr.target}')
+@@ -306,6 +342,12 @@
+         elif isinstance(i, tac.IfGoto):
+             self._load(i.cond, '$t0')
+             self.emit(f'  {"beq" if i.negate else "bne"} $t0, $zero, {i.label}')
++        elif isinstance(i, tac.IfRel) and i.op in ('==', '!=') and self._both_strings(i.left, i.right):
++            self._load(i.left, '$a0')
++            self._load(i.right, '$a1')
++            self.emit('  jal _mips_streq')
++            self.needs_streq = True
++            self.emit(f'  {"bne" if i.op == "==" else "beq"} $v0, $zero, {i.label}')
+         elif isinstance(i, tac.IfRel):
+             self._load(i.left, '$t0')
+             self._load(i.right, '$t1')
+@@ -345,6 +387,8 @@
+         self.value_types.clear()
+         self.needs_concat = False
+         self.needs_print_bool = False
++        self.needs_print_str = False
++        self.needs_streq = False
+         self.regs.clear()
+         if 'main' not in self.labels:
+             raise MIPSError('La primera versión requiere la etiqueta main')
+@@ -377,6 +421,25 @@
+                       '_mips_bool_emit:', '  li $v0, 4', '  syscall', '  jr $ra')
+         if self.needs_concat:
+             self._emit_concat_runtime()
++        if self.needs_print_str:
++            self.emitter.data.append('_mips_null_text: .asciiz "null"')
++            self.emit('_mips_print_str:', '  bne $a0, $zero, _mips_print_str_go',
++                      '  la $a0, _mips_null_text', '_mips_print_str_go:',
++                      '  li $v0, 4', '  syscall', '  jr $ra')
++        if self.needs_streq:
++            # a0, a1: cadenas con NUL. v0 = 1 si son iguales (null == null tambien).
++            self.emit('_mips_streq:',
++                      '  beq $a0, $a1, _mips_streq_yes',
++                      '  beq $a0, $zero, _mips_streq_no',
++                      '  beq $a1, $zero, _mips_streq_no',
++                      '_mips_streq_loop:',
++                      '  lbu $t0, 0($a0)', '  lbu $t1, 0($a1)',
++                      '  bne $t0, $t1, _mips_streq_no',
++                      '  beq $t0, $zero, _mips_streq_yes',
++                      '  addiu $a0, $a0, 1', '  addiu $a1, $a1, 1',
++                      '  j _mips_streq_loop',
++                      '_mips_streq_yes:', '  li $v0, 1', '  jr $ra',
++                      '_mips_streq_no:', '  move $v0, $zero', '  jr $ra')
+         return self.emitter.render()
+ 
+     def _emit_concat_runtime(self):
+--- a/tests/classes/test_increment9.py	2026-11-04 19:28:03.000000000 +0000
++++ b/tests/classes/test_increment9.py	2026-11-04 21:22:58.898776464 +0000
+@@ -72,7 +72,7 @@
+                                   capture_output=True, text=True, encoding='utf-8',
+                                   errors='replace', timeout=45)
+             self.assertEqual(mars.returncode, 0, mars.stdout + mars.stderr)
+-            self.assertEqual(mars.stdout.strip(), EXPECTED, mars.stdout + mars.stderr)
++            self.assertEqual(mars.stdout.replace("\n", ""), EXPECTED, mars.stdout + mars.stderr)
+ 
+ 
+ if __name__ == '__main__':
+--- a/tests/regression/test_increment10.py	2026-11-04 19:28:03.000000000 +0000
++++ b/tests/regression/test_increment10.py	2026-11-04 21:22:58.900496104 +0000
+@@ -53,7 +53,7 @@
+             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+             executed = run_command(['java', '-jar', str(jar), 'nc', str(asm)])
+             self.assertEqual(executed.returncode, 0, executed.stdout + executed.stderr)
+-            self.assertEqual(executed.stdout.strip(), '101001320012920011')
++            self.assertEqual(executed.stdout.replace("\n", ""), '101001320012920011')
+ 
+     def test_missing_import_does_not_create_assembly(self):
+         with tempfile.TemporaryDirectory() as temp:
+--- a/tests/stress/test_increment13.py	2026-11-04 19:28:03.000000000 +0000
++++ b/tests/stress/test_increment13.py	2026-11-04 21:22:58.902079384 +0000
+@@ -50,7 +50,7 @@
+         asm, _ = self.compile_case(source)
+         result = command(['java', '-jar', str(jar), 'nc', str(asm)])
+         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+-        self.assertEqual(result.stdout.strip(), expected)
++        self.assertEqual(result.stdout.replace("\n", ""), expected)
+ 
+     def test_recursive_factorial(self):
+         self.run_case('''function factorial(n: integer): integer {
+--- a/tests/libraries/test_compiled_classes_e2e.py	2026-11-04 20:54:04.000000000 +0000
++++ b/tests/libraries/test_compiled_classes_e2e.py	2026-11-04 21:22:58.903568517 +0000
+@@ -73,7 +73,7 @@
+             self.skipTest('MARS no disponible: configure MARS_JAR o tools/Mars.jar')
+         result = run_command('java', '-jar', jar, 'nc', asm)
+         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+-        self.assertEqual(result.stdout.strip(), expected)
++        self.assertEqual(result.stdout.replace("\n", ""), expected)
+ 
+     def test_package_compiles_without_consumer(self):
+         self.build_library()
+--- a/tests/libraries/test_compiled_inheritance_e2e.py	2026-11-04 21:01:21.000000000 +0000
++++ b/tests/libraries/test_compiled_inheritance_e2e.py	2026-11-04 21:22:58.905042518 +0000
+@@ -74,7 +74,7 @@
+                 self.skipTest('MARS no disponible')
+             result = run('java', '-jar', jar, 'nc', output)
+             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+-            self.assertEqual(result.stdout.strip(), '720')
++            self.assertEqual(result.stdout.replace("\n", ""), '720')
+ 
+ 
+ if __name__ == '__main__':

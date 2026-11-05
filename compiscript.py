@@ -16,6 +16,9 @@ Uso:
 
 import os
 import sys
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 # ============================================================
@@ -33,10 +36,6 @@ from antlr4.error.ErrorListener import ErrorListener
 
 # El parser se importa por la ruta de paquete, igual que en semantic.py y en la
 # GUI. Mezclar rutas crea dos copias del módulo y rompe los isinstance().
-from compiscript.generated.CompiscriptLexer import CompiscriptLexer
-from compiscript.generated.CompiscriptParser import CompiscriptParser
-
-from compiscript.semantic import SemanticAnalyzer
 
 
 # ============================================================
@@ -55,6 +54,9 @@ Opciones:
                registros de activación
   --mips       Generar ensamblador MIPS a partir del TAC
   --output RUTA  Guardar el ensamblador en RUTA (requiere --mips)
+  --link-object RUTA  Enlazar un .mobj (repetible, requiere --mips)
+  --check-compiled-imports  Verificar bibliotecas .cplobj y sus ABI sin compilar
+  --build-library  Compilar un modulo .cps independiente a .cplobj (requiere --output)
   --all        Mostrar árbol sintáctico, tabla de símbolos, TAC y registros
   -h, --help   Mostrar esta ayuda
 
@@ -126,6 +128,8 @@ def parse(source):
     # Input
     # --------------------------------------------------------
 
+    from compiscript.generated.CompiscriptLexer import CompiscriptLexer
+    from compiscript.generated.CompiscriptParser import CompiscriptParser
     stream = InputStream(source)
 
     # --------------------------------------------------------
@@ -172,13 +176,17 @@ def parse(source):
 # ANÁLISIS SEMÁNTICO
 # ============================================================
 
-def analyze(tree):
+def analyze(tree, compiled_plan=None, source_path=None):
     """
     Ejecuta el analizador semántico sobre el árbol generado
     por ANTLR.
     """
 
+    from compiscript.semantic import SemanticAnalyzer
     analyzer = SemanticAnalyzer()
+    if compiled_plan is not None:
+        from compiscript.modules.semantic_bridge import install_plan_symbols
+        install_plan_symbols(analyzer, compiled_plan, source_path)
 
     analyzer.visit(tree)
 
@@ -312,13 +320,13 @@ def print_tree(tree, parser, indent=0, max_depth=6):
 
 def validate_arguments(args):
     """Valida flags y argumento de --output sin confundir rutas con opciones."""
-    flags = {"--tree", "--symbols", "--tac", "--frames", "--all", "--mips"}
+    flags = {"--tree", "--symbols", "--tac", "--frames", "--all", "--mips", "--check-compiled-imports", "--build-library"}
     index = 0
     while index < len(args):
         arg = args[index]
-        if arg == "--output":
+        if arg in ("--output", "--link-object"):
             if index + 1 >= len(args) or not args[index + 1].strip() or args[index + 1].startswith("--"):
-                print("Error: --output requiere una ruta.")
+                print(f"Error: {arg} requiere una ruta.")
                 return False
             index += 2
             continue
@@ -326,8 +334,17 @@ def validate_arguments(args):
             print(f"Error: opción desconocida: {arg}")
             return False
         index += 1
-    if "--output" in args and "--mips" not in args:
-        print("Error: --output requiere --mips.")
+    if "--output" in args and not ({"--mips", "--build-library"} & set(args)):
+        print("Error: --output requiere --mips o --build-library.")
+        return False
+    if "--build-library" in args and ("--mips" in args or "--link-object" in args or "--check-compiled-imports" in args):
+        print("Error: --build-library no se combina con --mips, --link-object ni --check-compiled-imports.")
+        return False
+    if "--build-library" in args and "--output" not in args:
+        print("Error: --build-library requiere --output.")
+        return False
+    if "--link-object" in args and "--mips" not in args:
+        print("Error: --link-object requiere --mips.")
         return False
     if args.count("--output") > 1:
         print("Error: --output solo puede especificarse una vez.")
@@ -335,7 +352,7 @@ def validate_arguments(args):
     return True
 
 
-def compile_mips(tree, analyzer, output_path=None):
+def compile_mips(tree, analyzer, output_path=None, compiled_plan=None):
     """Genera TAC y MIPS; no guarda archivos si alguna fase falla."""
     from compiscript.codegen import CodeGenerator
     from compiscript.mips import MIPSGenerator, MIPSError
@@ -344,7 +361,15 @@ def compile_mips(tree, analyzer, output_path=None):
     intermediate.generate(tree)
     if intermediate.errors:
         raise MIPSError("Errores de TAC: " + "; ".join(map(str, intermediate.errors)))
-    assembler = MIPSGenerator(intermediate.instructions, intermediate.records, analyzer.table)
+    records = list(intermediate.records)
+    external_labels = set()
+    if compiled_plan is not None:
+        from compiscript.modules.compiled_runtime import external_records
+        external = external_records(compiled_plan)
+        external_labels = {record.label for record in external}
+        records.extend(external)
+    assembler = MIPSGenerator(intermediate.instructions, records, analyzer.table,
+                              external_labels=external_labels)
     asm = assembler.generate()
     if output_path is not None:
         from pathlib import Path
@@ -390,8 +415,38 @@ def main():
     if not validate_arguments(args):
         return 1
 
+    if "--build-library" in args:
+        from compiscript.modules.source_library_builder import build_source_library, SourceLibraryError
+        try:
+            output = args[args.index("--output") + 1]
+            result = build_source_library(filepath, output)
+        except (SourceLibraryError, OSError, ValueError) as error:
+            print(f"Error de biblioteca: {error}")
+            return 1
+        print(f"Biblioteca compilada guardada en: {result}")
+        return 0
+
+    if "--check-compiled-imports" in args:
+        if len(args) != 1:
+            print("Error: --check-compiled-imports se usa sin otras opciones.")
+            return 1
+        from compiscript.modules.compiled_import_plan import build_import_plan
+        from compiscript.modules.compiled_imports import CompiledImportError
+        try:
+            plan = build_import_plan(filepath)
+        except (CompiledImportError, OSError, ValueError) as error:
+            print(f"Error de bibliotecas compiladas: {error}")
+            return 1
+        print(f"Bibliotecas compiladas verificadas: {len(plan.libraries)}")
+        for dep in plan.libraries:
+            print(f"  {dep.path} ({len(dep.metadata['exports'])} exportaciones ABI)")
+        print(f"Importaciones compiladas verificadas: {len(plan.symbols)}")
+        print("Nota: esta comprobacion no compila ni enlaza las bibliotecas.")
+        return 0
+
     wants_mips = "--mips" in args
     output_path = args[args.index("--output") + 1] if "--output" in args else None
+    linked_objects = [args[i + 1] for i, arg in enumerate(args) if arg == "--link-object"]
 
     show_tree = (
         "--tree" in args
@@ -429,7 +484,7 @@ def main():
     # --------------------------------------------------------
 
     try:
-        with open(filepath, "r", encoding="utf-8") as file:
+        with open(filepath, "r", encoding="utf-8-sig") as file:
             source = file.read()
 
     except FileNotFoundError:
@@ -443,6 +498,23 @@ def main():
     except OSError as error:
         print(f"Error al leer el archivo:")
         print(f"  {error}")
+        return 1
+
+    compiled_plan = None
+    try:
+        from compiscript.modules.compiled_import_plan import build_import_plan
+        from compiscript.modules.compiled_imports import CompiledImportError
+        compiled_plan = build_import_plan(filepath)
+        from pathlib import Path
+        entry_path = Path(filepath).resolve()
+        transitive = [(owner, local) for owner, local in compiled_plan.symbols
+                      if Path(owner).resolve() != entry_path]
+        if transitive:
+            raise CompiledImportError(
+                'Las importaciones .cplobj desde modulos .cps secundarios '
+                'aun no estan soportadas; importarlas desde el archivo principal')
+    except (CompiledImportError, OSError, ValueError) as error:
+        print(f"Error de bibliotecas compiladas: {error}")
         return 1
 
     # Resolver modulos antes del parser existente. Los programas sin imports
@@ -505,7 +577,7 @@ def main():
     # ANÁLISIS SEMÁNTICO
     # ========================================================
 
-    analyzer = analyze(tree)
+    analyzer = analyze(tree, compiled_plan, filepath)
 
     if analyzer.errors:
 
@@ -569,7 +641,19 @@ def main():
         else:
             try:
                 from compiscript.mips import MIPSError
-                asm = compile_mips(tree, analyzer, output_path)
+                if linked_objects or (compiled_plan and compiled_plan.libraries):
+                    from compiscript.modules.mips_linker import link, LinkError
+                    from pathlib import Path
+                    from tempfile import TemporaryDirectory
+                    with TemporaryDirectory() as temp_dir:
+                        intermediate = Path(temp_dir) / "main.asm"
+                        asm = compile_mips(tree, analyzer, intermediate, compiled_plan)
+                        destination = Path(output_path) if output_path else Path(temp_dir) / "linked.asm"
+                        library_objects = compiled_plan.extract_objects(Path(temp_dir) / 'compiled') if compiled_plan else []
+                        link(intermediate, [*linked_objects, *library_objects], destination)
+                        asm = destination.read_text(encoding="utf-8")
+                else:
+                    asm = compile_mips(tree, analyzer, output_path, compiled_plan)
             except (MIPSError, ValueError, OSError) as error:
                 print(f"Error de generación MIPS: {error}")
                 return 1

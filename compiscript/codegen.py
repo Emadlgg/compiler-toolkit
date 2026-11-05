@@ -914,6 +914,13 @@ class CodeGenerator(CompiscriptVisitor):
             name = self.classes[name].parent_class
         return list(reversed(chain))
 
+    def visitNewArrayExpr(self, ctx):
+        count = self.visit(ctx.expression())
+        result = self.new_temp()
+        self.emit(NewArray(result, count))
+        self.release(count)
+        return result
+
     def visitNewExpr(self, ctx):
         cls = self.symbols.get(ctx)
         if cls is None:

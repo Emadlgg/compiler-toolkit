@@ -15,3 +15,14 @@ def save_and_resolve(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text.rstrip('\n') + '\n', encoding='utf-8')
     return resolve_project(path)
+
+
+def save_and_resolve_with_map(path, text):
+    """Like save_and_resolve, also return original source locations."""
+    from compiscript.modules.resolver import resolve_project_with_map
+    path = Path(path).resolve()
+    if path.suffix.lower() != '.cps':
+        raise ValueError('El archivo principal debe tener extensión .cps')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.rstrip('\n') + '\n', encoding='utf-8')
+    return resolve_project_with_map(path)

@@ -118,6 +118,7 @@ class IDE(tk.Tk):
         for label, var, exts in [('LEXER', self.yal_path, [('YALex', '*.yal'), ('All', '*.*')]), ('GRAMMAR', self.yapar_path, [('YAPar', '*.yapar'), ('All', '*.*')]), ('INPUT', self.inp_path, [('Text', '*.txt'), ('All', '*.*')]), ('CPS', self.cps_path, [('Compiscript', '*.cps'), ('All', '*.*')]), ('SQL', self.sql_path, [('SQL', '*.sql'), ('All', '*.*')])]:
             self._sidebar_files[label] = self._file_btn(sb, label, var, exts)
         self._sidebar_files['DATABASE'] = self._dir_btn(sb, 'DATABASE', self.db_path)
+        self._build_cps_project_explorer(sb)
         self._sidebar_sections['parser_divider'] = self._divider(sb)
         self._sidebar_sections['parser_title'] = self._sb_section(sb, 'PARSER')
         parser_box = tk.Frame(sb, bg=C['bg1'])
@@ -161,6 +162,77 @@ class IDE(tk.Tk):
             self.stat_vars[key] = var
             tk.Label(card, textvariable=var, bg=C['bg3'], fg=C['green'], font=('Consolas', 10, 'bold')).pack(pady=(6, 0))
             tk.Label(card, text=label, bg=C['bg3'], fg=C['text3'], font=('Consolas', 6)).pack(pady=(0, 6))
+
+    def _build_cps_project_explorer(self, parent):
+        """Explorador compacto de archivos CPS, sin alterar los demás editores."""
+        panel = tk.Frame(parent, bg=C['bg1'])
+        panel.pack(fill=tk.X, padx=14, pady=(4, 6))
+        toolbar = tk.Frame(panel, bg=C['bg1'])
+        toolbar.pack(fill=tk.X)
+        tk.Label(toolbar, text='CPS PROJECT', bg=C['bg1'], fg=C['purple'],
+                 font=('Consolas', 8, 'bold')).pack(side=tk.LEFT)
+        tk.Button(toolbar, text='OPEN FOLDER', command=self._choose_cps_project,
+                  bg=C['bg2'], fg=C['green'], relief=tk.FLAT,
+                  font=('Consolas', 7)).pack(side=tk.RIGHT)
+        self.cps_project_tree = ttk.Treeview(panel, show='tree', height=5, selectmode='browse')
+        self.cps_project_tree.pack(fill=tk.X, pady=(3, 0))
+        self.cps_project_tree.bind('<Double-1>', self._open_cps_project_selection)
+        self.cps_project_root = None
+        self._cps_project_items = {}
+
+    def _choose_cps_project(self):
+        folder = filedialog.askdirectory(title='Abrir carpeta de proyecto Compiscript')
+        if folder:
+            self._populate_cps_project(folder)
+
+    def _populate_cps_project(self, folder):
+        from gui.project_files import list_project_files
+        try:
+            paths = list_project_files(folder)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror('Proyecto Compiscript', str(exc))
+            return
+        root = Path(folder).resolve()
+        tree = self.cps_project_tree
+        tree.delete(*tree.get_children())
+        self._cps_project_items = {}
+        nodes = {Path('.'): ''}
+        for path in paths:
+            rel = path.relative_to(root)
+            parent = Path('.')
+            for part in rel.parts[:-1]:
+                current = parent / part
+                if current not in nodes:
+                    nodes[current] = tree.insert(nodes[parent], 'end', text=part + '/', open=True)
+                parent = current
+            iid = tree.insert(nodes[parent], 'end', text=rel.name)
+            self._cps_project_items[iid] = path
+        self.cps_project_root = root
+        self._status(f'CPS project: {root.name} ({len(paths)} files)', 'ok')
+
+    def _open_cps_project_selection(self, event=None):
+        selection = self.cps_project_tree.selection()
+        if not selection:
+            return
+        path = self._cps_project_items.get(selection[0])
+        if path is None:
+            return
+        editor = self.editor_frames['Compiscript'][1]
+        current = self.cps_path.get().strip()
+        if current and Path(current).resolve() != path.resolve() and editor.edit_modified():
+            choice = messagebox.askyesnocancel('Cambios sin guardar',
+                '¿Guardar los cambios del archivo Compiscript antes de abrir otro?')
+            if choice is None:
+                return
+            if choice:
+                try:
+                    Path(current).write_text(editor.get('1.0', 'end-1c'), encoding='utf-8')
+                except OSError as exc:
+                    messagebox.showerror('Error al guardar', str(exc))
+                    return
+        if self._load_to_editor(str(path), 'cps  .cps'):
+            self.cps_path.set(str(path))
+            editor.edit_modified(False)
 
     def _sb_section(self, parent, title):
         widget = tk.Label(parent, text=title, bg=C['bg1'], fg=C['text3'], font=('Consolas', 7, 'bold'), anchor='w', padx=16, pady=5)
@@ -584,10 +656,14 @@ class IDE(tk.Tk):
             editor.config(state=tk.NORMAL)
             editor.delete('1.0', tk.END)
             editor.insert('1.0', content)
+            if tab == 'Compiscript':
+                editor.edit_modified(False)
             self._switch_tab(tab)
             self._status(f'loaded: {os.path.basename(path)}', 'ok')
+            return True
         except Exception as e:
             messagebox.showerror('Error', str(e))
+            return False
 
     def _get_editor(self, name):
         _, ed = self.editor_frames[name]
@@ -1321,6 +1397,7 @@ class IDE(tk.Tk):
 
     def _analyze_compiscript(self):
         """Pipeline CPS: análisis léxico -> sintáctico -> semántico."""
+        self._cps_source_map = {}
         self._status('compiling Compiscript...', 'working')
         for tab in ('Tokens CPS', 'Árbol CPS', 'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos', 'Símbolos', 'TAC CPS', 'Memoria CPS'):
             self._clear_tab(tab)
@@ -1343,10 +1420,10 @@ class IDE(tk.Tk):
                     self._status('Compilación cancelada', 'error')
                     return
                 self.cps_path.set(path)
-            from gui.cps_source import save_and_resolve
+            from gui.cps_source import save_and_resolve_with_map
             from compiscript.modules import ModuleError
             try:
-                source = save_and_resolve(path, source)
+                source, self._cps_source_map = save_and_resolve_with_map(path, source)
             except (ModuleError, OSError, ValueError) as exc:
                 self._show_cps_problems([], [], [], empty_message=f'Error de módulos: {exc}')
                 self.stat_vars['conflicts'].set('1')
@@ -1453,7 +1530,9 @@ class IDE(tk.Tk):
         de la fase semántica cuando todavía no se analiza.
         """
         self._problem_locations = {}
+        self._problem_details = {}
         self._problem_mode = mode
+        source_map = getattr(self, '_cps_source_map', {}) if mode == 'cps' else {}
 
         groups = [
             ('Errores Léxicos', lexical, 'LEXICAL', 'Sin errores léxicos'),
@@ -1464,6 +1543,11 @@ class IDE(tk.Tk):
         for tab, errors, phase, ok_message in groups:
             _, view = self.out_frames[tab]
             view.delete(*view.get_children())
+            detail = getattr(view, '_detail_text', None)
+            if detail is not None:
+                detail.config(state=tk.NORMAL)
+                detail.delete('1.0', tk.END)
+                detail.config(state=tk.DISABLED)
 
             if empty_message:
                 view.insert('', 'end', values=('INFO', '—', '—', empty_message), tags=('info',))
@@ -1486,16 +1570,46 @@ class IDE(tk.Tk):
                     line, col = self._error_location(err)
                     msg = str(err)
 
+                origin = source_map.get(line) if line is not None else None
+                if origin and origin[1] is not None:
+                    original_path, original_line = origin
+                    msg = f'{original_path.name}: {msg}'
+                    display_line = original_line
+                else:
+                    original_path, display_line = None, line
                 phase_label = {'LEXICAL': 'LÉXICO', 'SYNTAX': 'SINTÁCTICO', 'SEMANTIC': 'SEMÁNTICO'}[phase]
                 tags = (phase_tag, 'odd') if index % 2 else (phase_tag,)
                 iid = view.insert('', 'end', values=(
                     f'● {phase_label}',
-                    line if line is not None else '—',
-                    col + 1 if line is not None else '—',
+                    display_line if display_line is not None else '—',
+                    col + 1 if display_line is not None else '—',
                     msg
                 ), tags=tags)
+                from gui.ide_diagnostics import format_problem_detail
+                self._problem_details[(tab, iid)] = format_problem_detail(
+                    phase_label, display_line, col + 1, msg, original_path)
                 if line is not None:
-                    self._problem_locations[(tab, iid)] = (line, col)
+                    self._problem_locations[(tab, iid)] = ((original_path, display_line, col) if mode == 'cps' else (line, col))
+
+    def _on_problem_select(self, event=None):
+        tab = self.active_out.get()
+        if tab not in {'Errores Léxicos', 'Errores Sintácticos', 'Errores Semánticos'}:
+            return
+        _, tree = self.out_frames[tab]
+        selected = tree.selection()
+        message = getattr(self, '_problem_details', {}).get((tab, selected[0]), '') if selected else ''
+        detail = getattr(tree, '_detail_text', None)
+        if detail is not None:
+            detail.config(state=tk.NORMAL)
+            detail.delete('1.0', tk.END)
+            detail.insert('1.0', message or 'Selecciona un error para leer su descripción completa.')
+            detail.config(state=tk.DISABLED)
+
+    def _copy_problem_detail(self, tree):
+        detail = getattr(tree, '_detail_text', None)
+        if detail is not None:
+            self.clipboard_clear()
+            self.clipboard_append(detail.get('1.0', 'end-1c'))
 
     def _on_problem_double_click(self, event=None):
         """Navega al editor desde cualquiera de las tres pestañas de errores."""
@@ -1509,7 +1623,33 @@ class IDE(tk.Tk):
             if getattr(self, '_problem_mode', 'cps') == 'sql':
                 self._goto_sql_location(*location)
             else:
-                self._goto_cps_location(*location)
+                if len(location) == 3:
+                    self._goto_cps_file_location(*location)
+                else:
+                    self._goto_cps_location(*location)
+
+    def _goto_cps_file_location(self, path, line, col=0):
+        """Open the source module before navigating to its original line."""
+        if path is not None:
+            path = Path(path).resolve()
+            current = self.cps_path.get().strip()
+            if not current or Path(current).resolve() != path:
+                editor = self.editor_frames['Compiscript'][1]
+                if current and editor.edit_modified():
+                    answer = messagebox.askyesnocancel('Cambios sin guardar',
+                        '¿Guardar los cambios del archivo actual antes de navegar al error?')
+                    if answer is None:
+                        return
+                    if answer:
+                        try:
+                            Path(current).write_text(editor.get('1.0', 'end-1c'), encoding='utf-8')
+                        except OSError as exc:
+                            messagebox.showerror('Error al guardar', str(exc))
+                            return
+                if not self._load_to_editor(str(path), 'cps  .cps'):
+                    return
+                self.cps_path.set(str(path))
+        self._goto_cps_location(line, col)
 
     def _make_generic_tree_widget(self, parent):
         tree = ttk.Treeview(parent, columns=('detail',), show='tree headings')
@@ -1630,37 +1770,57 @@ class IDE(tk.Tk):
         return canvas
 
     def _make_problems_widget(self, parent):
-        """Panel limpio para errores léxicos, sintácticos y semánticos."""
+        """Resizable errors table plus wrapped, copyable diagnostic detail."""
         shell = tk.Frame(parent, bg=C['bg1'])
         shell.pack(fill=tk.BOTH, expand=True, padx=10, pady=9)
+        pane = tk.PanedWindow(shell, orient=tk.VERTICAL, bg=C['bg3'],
+                              sashwidth=8, sashrelief=tk.FLAT, bd=0)
+        pane.pack(fill=tk.BOTH, expand=True)
+        listing = tk.Frame(pane, bg=C['bg1'])
+        details = tk.Frame(pane, bg=C['bg1'])
+        pane.add(listing, minsize=90, stretch='always')
+        pane.add(details, minsize=75, stretch='never')
 
         cols = ('severity', 'line', 'col', 'message')
-        tree = ttk.Treeview(shell, columns=cols, show='headings', selectmode='browse', style='Problems.Treeview')
-        headers = [
-            ('severity', 'ESTADO / FASE', 145, 'w'),
-            ('line', 'LÍNEA', 72, 'center'),
-            ('col', 'COL', 62, 'center'),
-            ('message', 'DESCRIPCIÓN', 820, 'w'),
-        ]
+        tree = ttk.Treeview(listing, columns=cols, show='headings',
+                            selectmode='browse', style='Problems.Treeview')
+        headers = [('severity', 'ESTADO / FASE', 145, 'w'),
+                   ('line', 'LÍNEA', 65, 'center'),
+                   ('col', 'COL', 55, 'center'),
+                   ('message', 'DESCRIPCIÓN (selecciona para ver completa)', 420, 'w')]
         for col, title, width, anchor in headers:
             tree.heading(col, text=title)
-            tree.column(col, width=width, minwidth=55, anchor=anchor, stretch=col == 'message')
-
-        y = ttk.Scrollbar(shell, orient='vertical', command=tree.yview)
-        x = ttk.Scrollbar(shell, orient='horizontal', command=tree.xview)
+            tree.column(col, width=width, minwidth=50, anchor=anchor,
+                        stretch=col == 'message')
+        y = ttk.Scrollbar(listing, orient='vertical', command=tree.yview)
+        x = ttk.Scrollbar(listing, orient='horizontal', command=tree.xview)
         tree.configure(yscrollcommand=y.set, xscrollcommand=x.set)
         tree.grid(row=0, column=0, sticky='nsew')
         y.grid(row=0, column=1, sticky='ns')
         x.grid(row=1, column=0, sticky='ew')
-        shell.grid_rowconfigure(0, weight=1)
-        shell.grid_columnconfigure(0, weight=1)
+        listing.grid_rowconfigure(0, weight=1)
+        listing.grid_columnconfigure(0, weight=1)
 
+        header = tk.Frame(details, bg=C['bg2'])
+        header.pack(fill=tk.X)
+        tk.Label(header, text='DETALLE COMPLETO DEL ERROR', bg=C['bg2'],
+                 fg=C['text2'], font=('Consolas', 8, 'bold')).pack(side=tk.LEFT, padx=8, pady=5)
+        tk.Button(header, text='COPIAR', bg=C['bg3'], fg=C['green'],
+                  relief=tk.FLAT, font=('Consolas', 8),
+                  command=lambda: self._copy_problem_detail(tree)).pack(side=tk.RIGHT, padx=8)
+        detail = tk.Text(details, height=5, wrap=tk.WORD, bg=C['bg1'],
+                         fg=C['text'], font=('Consolas', 10), relief=tk.FLAT,
+                         padx=10, pady=8, state=tk.DISABLED)
+        detail.pack(fill=tk.BOTH, expand=True)
+        tree._detail_text = detail
+        tree._detail_pane = pane
         tree.tag_configure('ok', foreground=C['green'])
         tree.tag_configure('info', foreground=C['blue'])
         tree.tag_configure('lexical', foreground=C['amber'])
         tree.tag_configure('syntax', foreground=C['blue'])
         tree.tag_configure('semantic', foreground=C['red'])
         tree.tag_configure('odd', background=C['bg2'])
+        tree.bind('<<TreeviewSelect>>', self._on_problem_select)
         tree.bind('<Double-Button-1>', self._on_problem_double_click)
         return tree
 
