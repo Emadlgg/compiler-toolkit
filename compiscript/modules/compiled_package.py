@@ -44,7 +44,7 @@ def create_package(interface_path, object_path, output_path, *, metadata=None, d
         from .interface_metadata import validate_metadata, InterfaceError
         validate_metadata(metadata)
         from .class_package_builder import _exported_labels
-        if not set(_exported_labels(metadata)).issubset(set(exports)):
+        if not set(_exported_labels(metadata, allow_external_parents=bool(dependencies))).issubset(set(exports)):
             raise CompiledPackageError('Las etiquetas ABI deben estar exportadas por MIPS')
     manifest = {
         'format': FORMAT,
@@ -99,7 +99,7 @@ def read_package(path):
             metadata = json.loads(metadata_bytes)
             validate_metadata(metadata)
             from .class_package_builder import _exported_labels
-            if not set(_exported_labels(metadata)).issubset(set(manifest['exports'])):
+            if not set(_exported_labels(metadata, allow_external_parents=bool(manifest.get('dependencies')))).issubset(set(manifest['exports'])):
                 raise CompiledPackageError('Exportaciones ABI inconsistentes')
         except (ValueError, TypeError) as exc:
             raise CompiledPackageError(f'Metadatos ABI invalidos: {exc}') from exc

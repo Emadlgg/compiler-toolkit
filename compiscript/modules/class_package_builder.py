@@ -18,7 +18,9 @@ class ClassPackageBuildError(ValueError):
     pass
 
 
-def _exported_labels(metadata):
+def _exported_labels(metadata, allow_external_parents=False):
+    """allow_external_parents: el paquete declara dependencias; el padre puede vivir
+    en otra biblioteca (se verifica aparte con validate_external_inheritance)."""
     validate_metadata(metadata)
     labels = []
     exports = metadata['exports']
@@ -26,6 +28,9 @@ def _exported_labels(metadata):
         if item['kind'] == 'class':
             if item.get('parent'):
                 parent = item['parent']
+                if parent not in exports and allow_external_parents:
+                    labels.extend(method['label'] for method in item['methods'].values())
+                    continue
                 if parent not in exports or exports[parent]['kind'] != 'class':
                     raise ClassPackageBuildError(
                         f'Herencia externa no soportada aun en empaquetado: {name} -> {parent}')
@@ -38,6 +43,8 @@ def _exported_labels(metadata):
                     if ancestor in seen:
                         raise ClassPackageBuildError(f'Herencia circular: {name}')
                     seen.add(ancestor)
+                    if ancestor not in exports and allow_external_parents:
+                        break
                     if ancestor not in exports or exports[ancestor]['kind'] != 'class':
                         raise ClassPackageBuildError(f'Ancestro no exportado: {ancestor}')
                     ancestor = exports[ancestor].get('parent')
@@ -54,7 +61,7 @@ def _exported_labels(metadata):
             continue
         occupied = {}
         ancestor = item.get('parent')
-        while ancestor:
+        while ancestor and ancestor in exports:
             parent = exports[ancestor]
             for field_name, field in parent['fields'].items():
                 occupied.setdefault(field['offset'], f'{ancestor}.{field_name}')
@@ -70,15 +77,50 @@ def _exported_labels(metadata):
     return labels
 
 
-def build_class_package(assembly, interface, metadata_path, output):
-    """Package compiled routines with ABI metadata; fail closed on unsafe input."""
+def dependency_labels(packages):
+    """Etiquetas MIPS exportadas por una lista de paquetes verificados."""
+    labels = set()
+    for package in packages:
+        for item in package.metadata['exports'].values():
+            if item['kind'] == 'class':
+                labels.update(method['label'] for method in item['methods'].values())
+            elif item['kind'] == 'function':
+                labels.add(item['label'])
+    return labels
+
+
+def build_class_package(assembly, interface, metadata_path, output, dependencies=None):
+    """Package compiled routines with ABI metadata; fail closed on unsafe input.
+
+    dependencies: paquetes .cplobj de los que depende la biblioteca (por ejemplo, el
+    paquete de la clase padre). Se verifican con hash, se guardan en el manifiesto y
+    sus rutinas pueden ser referenciadas desde el objeto MIPS.
+    """
     metadata = json.loads(Path(metadata_path).read_text(encoding='utf-8-sig'))
-    labels = _exported_labels(metadata)
+    deps = [Path(d).resolve() for d in (dependencies or [])]
+    labels = _exported_labels(metadata, allow_external_parents=bool(deps))
+    external_labels = set()
+    if deps:
+        from .inheritance_dependencies import validate_external_inheritance
+        from .package_dependencies import resolve_package_graph
+        validate_external_inheritance(metadata, deps)
+        external_labels = dependency_labels(resolve_package_graph(deps))
+        if external_labels & set(labels):
+            raise ClassPackageBuildError('Etiqueta duplicada entre la biblioteca y sus dependencias: '
+                                         + ', '.join(sorted(external_labels & set(labels))))
+        base = Path(output).resolve().parent
+        for dep in deps:
+            try:
+                dep.relative_to(base)
+            except ValueError:
+                raise ClassPackageBuildError(
+                    f'La biblioteca debe guardarse en la misma carpeta (o una superior) que sus '
+                    f'dependencias: {dep.name} esta en {dep.parent}') from None
     with TemporaryDirectory(prefix='cps-lib-') as directory:
         obj = Path(directory) / 'library.mobj'
         try:
-            build_library_object(assembly, labels, obj)
-            return create_package(interface, obj, output, metadata=metadata)
+            build_library_object(assembly, labels, obj, external_labels=external_labels)
+            return create_package(interface, obj, output, metadata=metadata, dependencies=deps or None)
         except (ValueError, OSError) as exc:
             raise ClassPackageBuildError(str(exc)) from exc
 

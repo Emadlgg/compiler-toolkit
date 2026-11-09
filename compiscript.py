@@ -505,14 +505,6 @@ def main():
         from compiscript.modules.compiled_import_plan import build_import_plan
         from compiscript.modules.compiled_imports import CompiledImportError
         compiled_plan = build_import_plan(filepath)
-        from pathlib import Path
-        entry_path = Path(filepath).resolve()
-        transitive = [(owner, local) for owner, local in compiled_plan.symbols
-                      if Path(owner).resolve() != entry_path]
-        if transitive:
-            raise CompiledImportError(
-                'Las importaciones .cplobj desde modulos .cps secundarios '
-                'aun no estan soportadas; importarlas desde el archivo principal')
     except (CompiledImportError, OSError, ValueError) as error:
         print(f"Error de bibliotecas compiladas: {error}")
         return 1

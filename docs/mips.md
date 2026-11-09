@@ -56,6 +56,8 @@ python tests/mips/run_tests.py -v     # compila cada .cps, lo corre en MARS y co
 pytest tests -q                       # pruebas unitarias e integración
 ```
 
+En el IDE, el botón **TEST MIPS** corre esa misma batería y muestra el resultado de cada prueba en la pestaña *Pruebas CPS* (necesita Java y `tools/Mars.jar`); **TEST CPS** corre la batería del TAC. Al hacer clic en una prueba se abre en el editor para correrla con RUN MIPS.
+
 Casos exitosos: `tests/codegen/ok` y `tests/mips/cases/ok`. Casos fallidos: `tests/mips/cases/error` (cada línea del `.err` debe aparecer en el log del compilador o en la salida de MARS).
 
 ## Limitaciones conocidas
@@ -63,3 +65,24 @@ Casos exitosos: `tests/codegen/ok` y `tests/mips/cases/ok`. Casos fallidos: `tes
 - `try/catch` no está soportado por el generador de TAC.
 - `print` de objetos o arreglos completos da error de generación.
 - Enteros de 32 bits (desbordan como en MIPS).
+
+## Bibliotecas de clases (`export`, BUILD LIB, `.cplobj`)
+
+Una clase se puede guardar en un archivo y usarse desde otro documento:
+
+1. En el `.cps` que define la clase, márcala con `export class Animal { ... }` (necesita al menos un constructor o un método).
+2. En el IDE pulsa **BUILD LIB** (o `python compiscript.py Animal.cps --build-library --output build/Animal.cplobj`).
+3. En el otro documento: `import { Animal } from "./build/Animal.cplobj";`. La ruta es relativa a la carpeta del archivo que importa.
+4. Después de cambiar la clase hay que volver a pulsar BUILD LIB; el `.cplobj` es una copia compilada.
+
+También se puede importar por código fuente (`import { Animal } from "./Animal";`) sin compilar la biblioteca.
+
+### Importar y heredar entre archivos
+
+- Un archivo puede heredar de una clase importada desde un `.cplobj` (`class Perro : Animal`).
+- Cadena de archivos: `main.cps` importa `Perro` por fuente (`import { Perro } from "./Perro";`) y `Perro.cps` importa `Animal.cplobj`. Los `import` de `.cplobj` valen en cualquier módulo `.cps` del proyecto.
+- Padre e hijo pueden ir juntos en una biblioteca (un solo archivo con ambos `export`). Al importar el hijo hay que importar también el padre: `import { Animal, Perro } from "./build/Familia.cplobj";`.
+- Una biblioteca puede depender de otra: `Perro.cps` (con `import { Animal } from "./build/Animal.cplobj";` y `export class Perro : Animal`) se compila con BUILD LIB a `build/Perro.cplobj`. El paquete guarda `Animal.cplobj` como dependencia con su hash SHA-256; si esa dependencia cambia o falta, el compilador lo rechaza con un mensaje claro. Compila primero la biblioteca padre, y deja ambas en la misma carpeta `build/`.
+- Al importar `Perro.cplobj`, su padre se enlaza solo (no hace falta importarlo) y sus miembros heredados se resuelven. Funciona con cadenas más largas (`Cachorro` → `Perro` → `Animal`).
+- Si cambias una biblioteca padre, vuelve a compilar también las hijas: el hash de la dependencia ya no coincide.
+- Una biblioteca solo puede importar otras bibliotecas compiladas (`.cplobj`), no archivos `.cps` por código fuente. Tampoco admite variables globales.

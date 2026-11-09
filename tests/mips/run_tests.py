@@ -43,8 +43,14 @@ def run_mars(jar, asm):
     return '\n'.join(lines).strip()
 
 
+def show(good, cps):
+    """Una linea por prueba, con el formato que lee la pestana Pruebas CPS del IDE.
+    El nombre es relativo a tests/ (codegen/ok/01_x.cps, mips/cases/error/01_y.cps)."""
+    name = cps.resolve().relative_to(ROOT / 'tests').as_posix()
+    print(f'  {"ok   " if good else "FALLA"}  {name}')
+
+
 def main():
-    verbose = '-v' in sys.argv
     jar = find_mars()
     if jar is None or not java_available():
         print('Se necesita Java y tools/Mars.jar (o la variable MARS_JAR).')
@@ -63,8 +69,8 @@ def main():
             got = run_mars(jar, asm) if built else log.strip()
             good = built and got == expected
             passed, failed = passed + good, failed + (not good)
-            print(f'  [{"OK" if good else "FALLO"}] {cps.parent.name}/{cps.name}')
-            if not good and (verbose or True):
+            show(good, cps)
+            if not good:
                 print('    esperado:', repr(expected)[:200])
                 print('    obtenido:', repr(got)[:200])
         print('Casos fallidos')
@@ -77,7 +83,7 @@ def main():
             missing = [w for w in wanted if w not in output]
             good = not missing
             passed, failed = passed + good, failed + (not good)
-            print(f'  [{"OK" if good else "FALLO"}] {cps.name}')
+            show(good, cps)
             if not good:
                 print('    falta en la salida:', missing)
     print(f'\n{passed}/{passed + failed} pruebas correctas')

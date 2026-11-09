@@ -26,3 +26,30 @@ def save_and_resolve_with_map(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text.rstrip('\n') + '\n', encoding='utf-8')
     return resolve_project_with_map(path)
+
+
+def make_analyzer(path):
+    """SemanticAnalyzer listo para el archivo `path`, con las clases/funciones de
+    las bibliotecas .cplobj que importa (igual que hace el CLI).
+
+    Devuelve (analyzer, error). Si hay un problema con las bibliotecas, error trae
+    el mensaje para mostrarlo en el IDE.
+    """
+    from compiscript.semantic import SemanticAnalyzer
+    from compiscript.modules.compiled_import_plan import build_import_plan
+    from compiscript.modules.compiled_imports import CompiledImportError
+    from compiscript.modules.semantic_bridge import install_plan_symbols
+    analyzer = SemanticAnalyzer()
+    try:
+        plan = build_import_plan(Path(path).resolve())
+        entry = Path(path).resolve()
+        install_plan_symbols(analyzer, plan, entry)
+    except (CompiledImportError, OSError, ValueError) as exc:
+        return None, f'Error de bibliotecas compiladas: {exc}'
+    return analyzer, None
+
+
+def library_output_path(path):
+    """Ruta por omisión del .cplobj: <carpeta>/build/<NombreArchivo>.cplobj"""
+    path = Path(path).resolve()
+    return path.parent / 'build' / (path.stem + '.cplobj')

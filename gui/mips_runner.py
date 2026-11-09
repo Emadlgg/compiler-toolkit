@@ -59,3 +59,24 @@ def compile_and_run(source, output, run=False, mars_jar=None, timeout=60):
               ('error in ', 'invalid command argument', 'processing terminated due to errors',
                'runtime exception', 'assemble: operation completed with errors'))
     return MIPSResult(not failed, asm, log + '\n\n--- MARS ---\n' + console, True)
+
+
+def build_library(source, output, timeout=60):
+    """Compila un .cps con `export class/function` a una biblioteca .cplobj
+    (mismo CLI: compiscript.py --build-library). Devuelve (ok, log)."""
+    source, output = Path(source).resolve(), Path(output).resolve()
+    if not source.is_file():
+        return False, f'Archivo no encontrado: {source}'
+    output.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env['PYTHONIOENCODING'] = 'utf-8'
+    env['PYTHONUTF8'] = '1'
+    try:
+        result = subprocess.run([sys.executable, str(ROOT / 'compiscript.py'), str(source),
+                                 '--build-library', '--output', str(output)], cwd=str(ROOT),
+                                env=env, capture_output=True, text=True, encoding='utf-8',
+                                errors='replace', timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f'No se pudo ejecutar el compilador: {exc}'
+    log = (result.stdout + '\n' + result.stderr).strip()
+    return result.returncode == 0 and output.is_file(), log

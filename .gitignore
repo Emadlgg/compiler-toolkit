@@ -1,11 +1,27 @@
-# Compiler Lab - YALex, YAPar, Compiscript y SQL
-# Mantener en Git el codigo fuente, las gramaticas, los parsers ANTLR
-# generados en Python y los archivos esperados de las pruebas.
+```gitignore
+# ============================================================
+# COMPILER LAB - SQL + COMPISCRIPT + MIPS
+# ============================================================
 
-# Python: cache, compilacion y entornos virtuales
+# ------------------------------------------------------------
+# 1. Python: cache y archivos compilados
+# ------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
+
+# ------------------------------------------------------------
+# 2. Entornos virtuales
+# ------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ------------------------------------------------------------
+# 3. Pruebas, cobertura y herramientas de desarrollo
+# ------------------------------------------------------------
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -13,31 +29,34 @@ __pycache__/
 .pytype/
 .tox/
 .nox/
+
 .coverage
 .coverage.*
 htmlcov/
 coverage.xml
 *.prof
 *.pstats
-.venv/
-venv/
-env/
-ENV/
-.python-version
-pip-wheel-metadata/
-build/
+
+# ------------------------------------------------------------
+# 4. Empaquetado de Python
+# ------------------------------------------------------------
 dist/
 *.egg-info/
 .eggs/
+pip-wheel-metadata/
 
-# Archivos locales de configuracion y secretos
+# ------------------------------------------------------------
+# 5. Configuracion local y secretos
+# ------------------------------------------------------------
 .env
 .env.*
 !.env.example
 !.env.sample
 *.local
 
-# Editores e IDEs
+# ------------------------------------------------------------
+# 6. Editores
+# ------------------------------------------------------------
 .vscode/
 .idea/
 *.sublime-workspace
@@ -46,31 +65,52 @@ dist/
 *.swo
 *~
 
-# Sistema operativo
+# ------------------------------------------------------------
+# 7. Sistema operativo
+# ------------------------------------------------------------
 .DS_Store
 Thumbs.db
 desktop.ini
 $RECYCLE.BIN/
 
-# ANTLR: artefactos auxiliares (NO ignorar generated/*.py)
+# ------------------------------------------------------------
+# 8. ANTLR
+# Conservar los parsers generados en Python
+# ------------------------------------------------------------
 *.interp
 *.tokens
 
-# Archivos temporales de generacion YALex/YAPar
+# ------------------------------------------------------------
+# 9. Archivos temporales YALex / YAPar
+# ------------------------------------------------------------
 /temp_gui_lexer.py
 /temp_gui_lexer_*.py
 /temp_lexer.py
 /temp_parser.py
+
 /.tmp/
 /tmp/
 /temp/
 
-# Datos de ejecucion del interprete SQL (bases locales)
+# ------------------------------------------------------------
+# 10. Bases de datos SQL locales
+# ------------------------------------------------------------
 /database/
 /database_*/
-# Para compartir una base de ejemplo, guardarla en examples/ o fixtures/
+/bases_datos/
+/pruebas_finales/
 
-# Copias de seguridad, volcados y logs
+# ------------------------------------------------------------
+# 11. Resultados temporales
+# ------------------------------------------------------------
+/output/
+/outputs/
+/results/
+/resultados/
+
+# ------------------------------------------------------------
+# 12. Logs y respaldos
+# ------------------------------------------------------------
 *.bak
 *.backup
 *.orig
@@ -79,6 +119,11 @@ $RECYCLE.BIN/
 *.pid
 *.pid.lock
 *.stackdump
+
+# ------------------------------------------------------------
+# 13. Bases SQLite accidentales
+# No se utiliza SQLite en este proyecto
+# ------------------------------------------------------------
 *.sqlite
 *.sqlite3
 *.db
@@ -86,15 +131,26 @@ $RECYCLE.BIN/
 *.db-wal
 *.db-shm
 
-# Salidas temporales en la raiz (no ignorar fixtures de tests/)
-/output/
-/outputs/
-/results/
-/resultados/
+# ------------------------------------------------------------
+# 14. Scripts y reportes temporales de organizacion
+# ------------------------------------------------------------
+/organizacion/
+/maintenance/
 
-# Bases de datos creadas desde Compiler Lab
-/bases_datos/
+/organizar_proyecto.py
+/organizar_fase3.py
+/limpieza_fase2.py
+/limpieza_fase6.py
+/limpieza_final_fase7.py
+/auditoria_fase5.py
 
-# IMPORTANTE: NO ignorar globalmente *.csv, *.json, *.out, *.err,
-# *.tac, *.pdf, *.java ni generated/.
-# Algunos son archivos de prueba, documentacion o codigo necesario.
+# ------------------------------------------------------------
+# 15. Archivos de compilacion MIPS temporales
+# ------------------------------------------------------------
+/build/
+
+# Conservar bibliotecas compiladas necesarias para la demo
+!/build/
+ /build/*
+!/build/*.cplobj
+

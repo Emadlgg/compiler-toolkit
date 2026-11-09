@@ -137,8 +137,10 @@ class IDE(tk.Tk):
         self._sidebar_actions['ANALYZE SQL'] = self._action_btn(sb, '◇   ANALYZE SQL', self._run_sql, C['blue'])
         self._sidebar_actions['EXECUTE SQL'] = self._action_btn(sb, '▶   EXECUTE SQL', self._execute_sql, C['green'])
         self._sidebar_actions['BUILD MIPS'] = self._action_btn(sb, '◆   BUILD MIPS', self._build_cps_mips, C['purple'])
+        self._sidebar_actions['BUILD LIB'] = self._action_btn(sb, '▣   BUILD LIB', self._build_cps_library, C['blue'])
         self._sidebar_actions['RUN MIPS'] = self._action_btn(sb, '▶   RUN MIPS', self._run_cps_mips, C['green'])
         self._sidebar_actions['TEST CPS'] = self._action_btn(sb, '✔   TEST CPS', self._run_cps_tests, C['green'])
+        self._sidebar_actions['TEST MIPS'] = self._action_btn(sb, '✔   TEST MIPS', self._run_mips_tests, C['green'])
         self._sidebar_actions['SAVE'] = self._action_btn(sb, '▣   SAVE', self._save, C['blue'])
         self._sidebar_sections['session_divider'] = self._divider(sb)
         self._sidebar_sections['session_title'] = self._sb_section(sb, 'SESSION')
@@ -468,7 +470,7 @@ class IDE(tk.Tk):
             'YALex': ('SAVE',),
             'YAPar': ('RUN', 'RUN ALL', 'SAVE'),
             'Entrada': ('RUN', 'RUN ALL', 'SAVE'),
-            'Compiscript': ('COMPILE CPS', 'BUILD MIPS', 'RUN MIPS', 'TEST CPS', 'SAVE'),
+            'Compiscript': ('COMPILE CPS', 'BUILD MIPS', 'RUN MIPS', 'BUILD LIB', 'TEST CPS', 'TEST MIPS', 'SAVE'),
             'SQL': ('ANALYZE SQL', 'EXECUTE SQL', 'SAVE'),
         }
         # Se conserva el orden original del panel lateral.
@@ -737,12 +739,20 @@ class IDE(tk.Tk):
             self._status(f'error: {e}', 'error')
 
     def _run_cps_tests(self):
-        """Corre la batería de pruebas del generador de código intermedio (tests/codegen)."""
+        """Corre la batería del generador de código intermedio (tests/codegen)."""
+        self._start_tests('tac')
+
+    def _run_mips_tests(self):
+        """Corre la batería extremo a extremo del generador MIPS (tests/mips, usa MARS)."""
+        self._start_tests('mips')
+
+    def _start_tests(self, mode):
         if getattr(self, '_cps_tests_running', False):
             return
+        self._tests_mode = mode
         self._cps_tests_running = True
         self._cps_tests_result = None
-        self._status('running CPS tests...', 'working')
+        self._status('running MIPS tests...' if mode == 'mips' else 'running CPS tests...', 'working')
         self._tests_show_running()
         self._switch_out('Pruebas CPS')
         threading.Thread(target=self._cps_tests_worker, daemon=True).start()
@@ -758,7 +768,8 @@ class IDE(tk.Tk):
 
     def _cps_tests_worker(self):
         root = self._repo_root()
-        script = os.path.join(root, 'tests', 'codegen', 'run_tests.py')
+        suite = 'mips' if getattr(self, '_tests_mode', 'tac') == 'mips' else 'codegen'
+        script = os.path.join(root, 'tests', suite, 'run_tests.py')
         if not os.path.exists(script):
             self._cps_tests_result = (f'No se encontró la batería de pruebas:\n{script}', False)
             return
@@ -896,14 +907,18 @@ class IDE(tk.Tk):
             self._switch_out('Pruebas CPS')
             return
 
-        base = os.path.join(self._repo_root(), 'tests', 'codegen')
+        mips_mode = getattr(self, '_tests_mode', 'tac') == 'mips'
+        # TAC: nombres relativos a tests/codegen; MIPS: relativos a tests/ (codegen/ok/..., mips/cases/...)
+        base = os.path.join(self._repo_root(), 'tests') if mips_mode else os.path.join(self._repo_root(), 'tests', 'codegen')
+        ok_detail = 'compilada, ejecutada en MARS y salida verificada' if mips_mode else 'TAC y salida verificados'
         for group_name, tests in groups:
             passed = sum(1 for t in tests if t['ok'])
             gid = tree.insert('', 'end', text=f'{group_name}  ({passed}/{len(tests)})', open=True, tags=('group',))
             for t in tests:
-                kind = t['name'].split('/')[0] if '/' in t['name'] else 'unit'
+                parts_name = t['name'].split('/')
+                kind = parts_name[-2] if len(parts_name) > 1 else 'unit'
                 if t['ok']:
-                    detail = {'ok': 'TAC y salida verificados', 'error': 'errores esperados detectados'}.get(kind, '')
+                    detail = {'ok': ok_detail, 'error': 'errores esperados detectados'}.get(kind, '')
                 else:
                     detail = next((p.lstrip('- ') for p in t['problems'] if p.strip()), 'falló')
                 path = os.path.join(base, *t['name'].split('/')) if kind in ('ok', 'error') else None
@@ -913,10 +928,11 @@ class IDE(tk.Tk):
 
         passed_all = total[0] == total[1]
         self.tests_summary.config(
-            text=f'{total[0]}/{total[1]} pruebas correctas   ·   haz clic en una para abrirla en el editor y ver su TAC',
+            text=(f'{total[0]}/{total[1]} pruebas correctas   ·   haz clic en una para abrirla en el editor y correrla con RUN MIPS'
+                  if mips_mode else f'{total[0]}/{total[1]} pruebas correctas   ·   haz clic en una para abrirla en el editor y ver su TAC'),
             fg=C['green'] if passed_all else C['red'])
         self._set_test_info([('Selecciona una prueba de la lista.', None)])
-        self._status(f'CPS tests: {total[0]}/{total[1]} pruebas correctas', 'ok' if passed_all else 'error')
+        self._status(f"{'MIPS' if mips_mode else 'CPS'} tests: {total[0]}/{total[1]} pruebas correctas", 'ok' if passed_all else 'error')
         self._switch_out('Pruebas CPS')
 
     def _open_selected_test(self):
@@ -947,12 +963,14 @@ class IDE(tk.Tk):
             parts.append(('\n'.join(info['problems']) + '\n\n', 'fail'))
         if info['path']:
             base = info['path'][:-4]
+            mips_mode = getattr(self, '_tests_mode', 'tac') == 'mips'
             if info['kind'] == 'ok':
                 expected = read_file(base + '.out')
-                parts.append(('Salida esperada al ejecutar el TAC:\n', 'title'))
+                parts.append(('Salida esperada al ejecutar ' + ('en MARS' if mips_mode else 'el TAC') + ':\n', 'title'))
                 lines = (expected or '(no se encontró el .out)').split('\n')
                 parts.append(('\n'.join(lines[:12]) + ('\n…' if len(lines) > 12 else '') + '\n\n', None))
-                parts.append(('Se abrió en el editor y se compiló: mira las pestañas TAC CPS y Memoria CPS.', None))
+                parts.append(('Se abrió en el editor: pulsa RUN MIPS para ejecutarla en MARS.' if mips_mode
+                              else 'Se abrió en el editor y se compiló: mira las pestañas TAC CPS y Memoria CPS.', None))
             else:
                 expected = read_file(base + '.err')
                 parts.append(('Errores que debe reportar:\n', 'title'))
@@ -1391,6 +1409,37 @@ class IDE(tk.Tk):
             self._status('MIPS compilation failed', 'error')
             self._switch_out('Consola MIPS')
 
+    def _build_cps_library(self):
+        """Guarda las clases/funciones `export` del editor como biblioteca .cplobj."""
+        source = self._get_editor('Compiscript')
+        if not source:
+            messagebox.showwarning('Compiscript', 'Escribe o abre un archivo .cps primero.')
+            return
+        path = self.cps_path.get().strip()
+        if not path:
+            path = filedialog.asksaveasfilename(title='Guardar módulo Compiscript',
+                defaultextension='.cps', filetypes=[('Compiscript', '*.cps')])
+            if not path:
+                return
+            self.cps_path.set(path)
+        try:
+            from gui.cps_source import save_and_resolve, library_output_path
+            save_and_resolve(path, source)
+        except Exception as exc:
+            messagebox.showerror('Error al guardar Compiscript', str(exc))
+            return
+        output = library_output_path(path)
+        self._set_text('Consola MIPS', 'Compilando biblioteca...')
+        self._switch_out('Consola MIPS')
+        def worker():
+            from gui.mips_runner import build_library
+            ok, log = build_library(path, output)
+            msg = log + (f'\n\nImporta con:\n  import {{ NombreClase }} from \"./build/{output.name}\";' if ok else '')
+            self.after(0, lambda: (self._set_text('Consola MIPS', msg),
+                                   self._status('Biblioteca generada' if ok else 'Error de biblioteca',
+                                                'ok' if ok else 'error')))
+        threading.Thread(target=worker, daemon=True).start()
+
     def _run_compiscript(self):
         """Compila el contenido del editor Compiscript en un hilo separado."""
         threading.Thread(target=self._analyze_compiscript, daemon=True).start()
@@ -1454,7 +1503,14 @@ class IDE(tk.Tk):
             analyzer = None
             semantic_errors = []
             if not lex_listener.errors and not syn_listener.errors:
-                analyzer = SemanticAnalyzer()
+                from gui.cps_source import make_analyzer
+                analyzer, lib_error = make_analyzer(path)
+                if lib_error:
+                    self._show_cps_problems([], [], [], empty_message=lib_error)
+                    self.stat_vars['conflicts'].set('1')
+                    self._status('CPS: error de bibliotecas', 'error')
+                    self._switch_out('Errores Semánticos')
+                    return
                 analyzer.visit(tree)
                 semantic_errors = analyzer.errors
                 self._show_symbol_table(analyzer.table)

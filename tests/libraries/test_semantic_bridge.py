@@ -42,13 +42,21 @@ class TestSemanticBridge(unittest.TestCase):
         with self.assertRaises(CompiledImportError):
             install_plan_symbols(analyzer, self.plan({'SerVivo': 'Animal'}))
 
-    def test_other_source_import_not_leaked(self):
+    def test_other_source_import_is_installed(self):
+        """El resolvedor junta todos los .cps en un ambito global: los imports
+        .cplobj de modulos secundarios tambien se instalan (cadena main -> Perro -> Animal.cplobj)."""
         analyzer = SimpleNamespace(table=SymbolTable())
         plan = self.plan({'SerVivo': 'Animal'})
         imported = plan.symbols.pop((self.entry.resolve(), 'SerVivo'))
         plan.symbols[(self.entry.parent / 'other.cps', 'SerVivo')] = imported
-        self.assertEqual(install_plan_symbols(analyzer, plan), {})
+        self.assertIn('SerVivo', install_plan_symbols(analyzer, plan))
 
+    def test_same_import_from_two_modules_is_installed_once(self):
+        analyzer = SimpleNamespace(table=SymbolTable())
+        plan = self.plan({'SerVivo': 'Animal'})
+        imported = plan.symbols[(self.entry.resolve(), 'SerVivo')]
+        plan.symbols[(self.entry.parent / 'other.cps', 'SerVivo')] = imported
+        self.assertIn('SerVivo', install_plan_symbols(analyzer, plan))
 
 if __name__ == '__main__':
     unittest.main()

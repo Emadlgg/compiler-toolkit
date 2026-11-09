@@ -18,7 +18,7 @@ class LibraryBuildError(ValueError):
     pass
 
 
-def _extract(assembly, exported_labels):
+def _extract(assembly, exported_labels, external_labels=()):
     source = Path(assembly).read_text(encoding='utf-8-sig')
     try:
         data, code = _split_sections(source)
@@ -75,8 +75,9 @@ def _extract(assembly, exported_labels):
         known = _validate_v2(data, text)
     except LinkError as exc:
         raise LibraryBuildError(str(exc)) from exc
+    allowed = known | set(external_labels)
     for reference in list(_references(data, True)) + list(_references(text)):
-        if reference not in known:
+        if reference not in allowed:
             raise LibraryBuildError(f'Referencia externa no resuelta: {reference}')
     return data, text
 
@@ -89,9 +90,13 @@ def extract_routines(assembly, exported_labels):
     return text
 
 
-def build_library_object(assembly, exported_labels, output):
-    """Write a v1 object for text-only modules, or v2 with relocatable data."""
-    data, text = _extract(assembly, exported_labels)
+def build_library_object(assembly, exported_labels, output, external_labels=()):
+    """Write a v1 object for text-only modules, or v2 with relocatable data.
+
+    external_labels: rutinas exportadas por las dependencias declaradas del paquete;
+    el enlazador las resuelve contra esos objetos.
+    """
+    data, text = _extract(assembly, exported_labels, external_labels)
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     intermediate = output.with_suffix('.library-tmp.asm')

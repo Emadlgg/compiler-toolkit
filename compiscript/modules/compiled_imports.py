@@ -30,6 +30,11 @@ class CompiledDependency:
 def load_compiled_dependency(path):
     """Validate the full package, ABI and exported MIPS labels before use."""
     path = Path(path).resolve()
+    if not path.is_file():
+        raise CompiledImportError(
+            f'No se encontro la biblioteca compilada "{path.name}" en: {path}. '
+            f'Genera el archivo con BUILD LIB (o --build-library) sobre el .cps que la define; '
+            f'la ruta del import es relativa a la carpeta del archivo que importa.')
     try:
         interface, object_bytes, exports = read_package(path)
         metadata = read_interface_metadata(path)
