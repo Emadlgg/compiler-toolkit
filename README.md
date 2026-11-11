@@ -12,6 +12,9 @@ Construcción de Compiladores · Universidad del Valle de Guatemala · 2026
 </div>
 
 ---
+## Video de presentación
+
+[Ver presentación de Compiler Lab (Proyectos 2.1 y 3)](https://youtu.be/gSKznUogy4g)
 
 ## Descripción
 
