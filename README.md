@@ -1,427 +1,355 @@
-# Compiler Lab — Toolkit de Construcción de Compiladores
+<div align="center">
 
-**Proyecto académico · Construcción de Compiladores · Universidad del Valle de Guatemala · 2026**
+# Compiler Lab
 
-Compiler Lab reúne herramientas de análisis léxico, sintáctico y semántico, generación de código intermedio e interpretación de SQL en una aplicación de escritorio desarrollada en Python. Los componentes pueden utilizarse por separado desde la terminal o desde la interfaz gráfica Tkinter.
+### Del análisis léxico a la ejecución de código MIPS
 
-## Contenido
+**Plataforma educativa de construcción de compiladores e interpretación SQL**  
+Construcción de Compiladores · Universidad del Valle de Guatemala · 2026
 
-1. [Componentes](#componentes)
-2. [Requisitos e instalación](#requisitos-e-instalación)
-3. [Inicio rápido](#inicio-rápido)
-4. [Interfaz gráfica](#interfaz-gráfica)
-5. [YALex](#yalex-generador-léxico)
-6. [YAPar](#yapar-generador-sintáctico)
-7. [Compiscript](#compiscript)
-8. [SQL](#intérprete-sql-con-almacenamiento-en-archivos)
-9. [Pruebas](#pruebas)
-10. [Estructura del proyecto](#estructura-del-proyecto)
-11. [Limitaciones y precauciones](#limitaciones-y-precauciones)
-12. [Documentación complementaria](#documentación-complementaria)
+**Python** · **ANTLR 4** · **Tkinter** · **MIPS32 / MARS** · **Almacenamiento en archivos**
 
-## Componentes
+</div>
 
-| Herramienta | Entrada | Función principal | Salida |
-|---|---|---|---|
-| **YALex** | `.yal` | Construye un analizador léxico a partir de expresiones regulares | Lexer Python, tokens, autómatas y visualizaciones |
-| **YAPar** | `.yapar`, `.yal`, `.txt` | Construye analizadores sintácticos SLR(1), LALR y LL(1) | Tablas, conflictos, aceptación/rechazo y pasos |
-| **Compiscript** | `.cps` | Análisis léxico, sintáctico y semántico mediante ANTLR | Tokens, árbol, errores y tabla de símbolos |
-| **Código intermedio CPS** | `.cps` válido | Genera código de tres direcciones (TAC) y reporte de memoria | TAC, temporales, offsets y registros de activación |
-| **SQL** | `.sql` | Analiza y ejecuta sentencias SQL con almacenamiento propio | AST, errores, tablas CSV, metadatos e índices JSON |
-| **GUI** | Archivos de las herramientas | Integra editores, controles y paneles de resultados | Aplicación Tkinter |
+---
 
-### Arquitectura general
+## Descripción
+
+**Compiler Lab** reúne en una aplicación de escritorio las principales etapas de construcción de compiladores: análisis léxico, análisis sintáctico, análisis semántico, representación intermedia y generación de código ensamblador. Además, incorpora un **intérprete SQL propio** que almacena esquemas, registros e índices en archivos y directorios, sin delegar la ejecución de consultas a un gestor de bases de datos externo.
+
+El proyecto integra cuatro áreas:
+
+| Componente | Propósito | Tecnologías / salida |
+|---|---|---|
+| **YALex** | Generar analizadores léxicos a partir de expresiones regulares | AFN, AFD, lexer Python, visualizaciones |
+| **YAPar** | Construir y explorar analizadores sintácticos | SLR(1), LALR, LL(1), tablas y conflictos |
+| **Compiscript** | Analizar programas y generar código ejecutable | ANTLR, tabla de símbolos, TAC, MIPS32 |
+| **SQL** | Analizar y ejecutar consultas con persistencia propia | AST, semántica, CSV, metadatos, índices JSON |
+
+La interfaz **Compiler Lab**, desarrollada con Tkinter, permite trabajar con los cuatro componentes desde un mismo entorno.
+
+## Arquitectura
 
 ```text
-                        COMPILER LAB
-                             |
-          +------------------+------------------+
-          |                  |                  |
-        YALex              YAPar           Compiscript
-          |                  |                  |
-      Regex parser       Gramática         Lexer/Parser
-          |               FIRST/FOLLOW         ANTLR
-    Thompson -> AFN          |                  |
-          |             LR(0), SLR,        Semántica
-      Subconjuntos       LALR, LL(1)           |
-          |                  |              Símbolos
-         AFD              Parsing              |
-          |                  |              TAC/Memoria
-     Lexer Python            |                  |
-          +------------------+------------------+
-                             |
-                      GUI (Tkinter)
-                             |
-                   SQL (módulo separado)
-                             |
-                   Lexer -> Parser -> AST
-                             |
-                       Semántica
-                             |
-                       Ejecutor
-                             |
-                    CSV + metadata.txt
-                      + índices JSON
+                         COMPILER LAB (Tkinter)
+                                   |
+              +--------------------+--------------------+
+              |                    |                    |
+         YALex / YAPar         Compiscript              SQL
+              |                    |                    |
+      Regex -> AFN -> AFD     Archivo .cps         Sentencias SQL
+       FIRST / FOLLOW             |                    |
+       SLR / LALR / LL1       Lexer + Parser        Lexer + Parser
+              |                 (ANTLR)               (ANTLR)
+        Tablas y trazas           |                    |
+                            Análisis semántico       AST + semántica
+                                   |                    |
+                          Tabla de símbolos        Motor de consultas
+                                   |                    |
+                                  TAC               CSV + metadatos
+                                   |                 + índices JSON
+                              MIPS32 (.asm)
+                                   |
+                              MARS (Java)
 ```
 
-## Requisitos e instalación
+### Generación de código Compiscript
 
-- Python **3.11** (versión indicada por el proyecto).
-- Dependencias Python definidas en `requirements.txt`: `antlr4-python3-runtime==4.13.2` y `graphviz==0.21`.
-- **Graphviz de sistema** (ejecutable `dot` disponible en `PATH`) para generar imágenes de autómatas y árboles con Graphviz. La biblioteca Python `graphviz` por sí sola no instala ese ejecutable.
-- **Tkinter** para la interfaz gráfica (normalmente incluido con Python para Windows).
-- Java, únicamente si se necesita **regenerar** código desde gramáticas ANTLR usando el archivo JAR de `tools/`; no es necesario para usar los analizadores Python ya generados.
+El compilador transforma un archivo `.cps` en código de tres direcciones (**TAC**) y posteriormente en ensamblador **MIPS32**. La implementación incluye registros de activación, llamadas y retornos, paso de parámetros, uso de pila y asignación de registros mediante `getReg()`.
 
-Desde PowerShell, en la raíz del repositorio:
+### Intérprete SQL
+
+El intérprete procesa las consultas mediante lexer, parser, AST, análisis semántico y ejecución. La persistencia utiliza **archivos CSV, metadatos e índices JSON**. No utiliza SQLite, MySQL ni PostgreSQL como motor de ejecución.
+
+---
+
+## Requisitos
+
+- **Python 3.11** como versión de referencia. Las pruebas del proyecto también se han ejecutado satisfactoriamente con **Python 3.12**.
+- **Java** para ejecutar MIPS mediante MARS.
+- **Tkinter** para el IDE (normalmente disponible en las instalaciones de Python para Windows).
+- **Graphviz** y el ejecutable `dot` en el `PATH` para las visualizaciones de autómatas y árboles.
+- Dependencias Python indicadas en `requirements.txt`, especialmente `antlr4-python3-runtime==4.13.2` y `graphviz==0.21`.
+
+### Instalación
+
+Desde la raíz del repositorio, en PowerShell:
 
 ```powershell
-python --version
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
-Comprobar Tkinter y Graphviz:
+Para comprobar el entorno:
 
 ```powershell
-python -m tkinter
+python --version
+java -version
 dot -V
+python -m tkinter
 ```
 
-Si `dot` no se reconoce, instala Graphviz y agrega su directorio `bin` al `PATH`. El motor SQL no necesita Graphviz para ejecutar consultas.
+> **Nota:** Graphviz para Python no instala automáticamente el ejecutable `dot`. Java y `tools/Mars.jar` son necesarios para ejecutar los programas MIPS, pero no para analizar SQL.
 
 ## Inicio rápido
 
-Abrir la aplicación gráfica:
+### Abrir el IDE
 
 ```powershell
 python gui/app.py
 ```
 
-Ejemplos de ejecución por consola:
+Desde el IDE puedes seleccionar las áreas **YALex**, **YAPar**, **Compiscript** y **SQL**, cargar archivos, editar código, ejecutar análisis y consultar los resultados.
+
+### Ejecutar herramientas desde consola
 
 ```powershell
+# Analizador léxico
 python yalex.py grammars/java/java.yal -o lexer_generado.py
+
+# Analizador sintáctico
 python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --method slr
+
+# Análisis de Compiscript
 python compiscript.py examples/compiscript/example.cps --all
+
+# Generar ensamblador MIPS
+python compiscript.py entrega_demo/01_funciones_recursion.cps --mips --output build/programa.asm
+
+# Ejecutar ensamblador en MARS
+java -jar tools/Mars.jar nc build/programa.asm
+
+# Analizar SQL sin ejecutarlo
 python sql.py examples/sql/query.sql --tokens --tree --ast
-python ejecutar_sql.py examples/sql/universidad.sql --db database_demo
 ```
 
-**Atención:** la última instrucción **ejecuta** el SQL y puede crear o modificar archivos. Usa una carpeta de pruebas y verifica antes que el script no cree tablas ya existentes. Algunos ejemplos requieren un esquema o datos previos; consulta su contenido antes de ejecutarlos.
+Los comandos que escriben archivos pueden sobrescribir salidas existentes; utiliza rutas de prueba cuando corresponda.
 
-## Interfaz gráfica
+---
 
-La aplicación `gui/app.py` incluye cinco áreas de trabajo: **YALex**, **YAPar**, **Entrada**, **Compiscript** y **SQL**. La barra lateral es contextual: al cambiar de herramienta solo se muestran los archivos, controles y acciones pertinentes. El contenido de cada editor se conserva al cambiar de pestaña.
+## Uso del IDE
 
-| Área | Archivos/controles | Acciones |
-|---|---|---|
-| YALex | LEXER | SAVE |
-| YAPar | LEXER, GRAMMAR, INPUT; SLR(1), LALR, LL(1), pasos | RUN, RUN ALL, SAVE |
-| Entrada | LEXER, GRAMMAR, INPUT; opciones de parser | RUN, RUN ALL, SAVE |
-| Compiscript | CPS | COMPILE CPS, TEST CPS, SAVE |
-| SQL | SQL, DATABASE | ANALYZE SQL, EXECUTE SQL, SAVE |
+### SQL: analizar y ejecutar
 
-### Paneles y resultados
+1. Abre el IDE con `python gui/app.py` y selecciona **SQL**.
+2. En el panel lateral, utiliza **DATABASE (+)** para seleccionar una carpeta de trabajo.
+3. Escribe las sentencias SQL o carga un archivo con **SQL (+)**.
+4. Pulsa **ANALYZE SQL** para revisar tokens, árbol sintáctico, AST, esquema y errores **sin modificar datos**.
+5. Pulsa **EXECUTE SQL** y confirma la operación para ejecutar las sentencias.
+6. Consulta **Resultados SQL** y selecciona el resultado de la consulta que quieras inspeccionar.
 
-- **YALex:** tokens y reglas léxicas.
-- **YAPar / Entrada:** resultado, LR(0), FIRST/FOLLOW, SLR(1), LALR, LL(1) y gramática.
-- **Compiscript:** tokens, árbol sintáctico, errores por fase, símbolos, TAC, memoria, pruebas y referencias del lenguaje.
-- **SQL:** tokens, árbol sintáctico, AST, esquema, errores léxicos/sintácticos/semánticos y resultados en una tabla `ttk.Treeview` con selector de consultas.
-
-**ANALYZE SQL** solo analiza y valida. **EXECUTE SQL** solicita confirmación y ejecuta sentencias sobre la carpeta DATABASE seleccionada. La ejecución puede modificar datos persistentes. Los botones **SAVE** conservan el comportamiento de guardado de archivos asociados a las herramientas; revisa las rutas seleccionadas antes de utilizarlos.
-
-## YALex: generador léxico
-
-YALex lee especificaciones `.yal`, interpreta expresiones regulares y genera analizadores léxicos ejecutables en Python.
-
-**Proceso:** especificación → parser de regex → construcción de Thompson → AFN → construcción de subconjuntos → AFD → lexer generado.
-
-Características implementadas: definiciones `let`, reglas `rule`, resolución de referencias, combinación de autómatas, estrategia de coincidencia más larga (*longest match*), prioridad de reglas, tokens ignorados y visualizaciones con Graphviz.
-
-```powershell
-# Generar un lexer
-python yalex.py grammars/java/java.yal -o lexer_generado.py
-
-# Generar lexer y gráficos
-python yalex.py grammars/java/java.yal -o lexer_generado.py --all
-
-# Generar y tokenizar texto directamente
-python yalex.py grammars/java/java.yal -run "int x = 10;"
-
-# Consultar opciones
-python yalex.py --help
-```
-
-Módulos: `regex/`, `automata/` y `yalex/`. Las imágenes generadas requieren el ejecutable de Graphviz. Las rutas de salida de ejemplos son ilustrativas y pueden crear archivos en la carpeta de trabajo.
-
-## YAPar: generador sintáctico
-
-YAPar recibe gramáticas `.yapar` y, junto con un lexer YALex, permite analizar cadenas con distintos algoritmos:
-
-- **SLR(1):** autómata LR(0), conjuntos FOLLOW y tabla ACTION/GOTO.
-- **LALR:** construcción de tabla LALR y detección de conflictos.
-- **LL(1):** tabla predictiva a partir de FIRST/FOLLOW.
-
-Incluye cálculo de FIRST/FOLLOW, construcción de estados LR(0), tablas, conflictos, motores de análisis y opción para mostrar pasos.
-
-```powershell
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --method slr
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --method lalr
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --method ll1
-python yapar.py grammars/java/java_grammar.yapar -l grammars/java/java.yal -i examples/java/correcto.txt --all --steps
-python yapar.py --help
-```
-
-La aceptación de una cadena depende de que la gramática y el lexer sean compatibles. La detección de conflictos no implica que cualquier gramática sea válida para los tres métodos.
-
-## Compiscript
-
-Compiscript usa un lexer y parser generados por ANTLR. Sobre el árbol de análisis realiza comprobaciones semánticas y, cuando el programa es válido y las construcciones están soportadas, genera **código intermedio de tres direcciones (TAC)** y un reporte de memoria.
-
-```text
-archivo .cps
-   -> ANTLR Lexer / Parser
-   -> árbol sintáctico
-   -> análisis semántico
-   -> tabla de símbolos / ámbitos
-   -> generación TAC
-   -> reporte de memoria
-```
-
-Características: detección de errores léxicos, sintácticos y semánticos; ámbitos anidados; tipos y símbolos; funciones y clases; código intermedio; temporales; representación de datos globales, clases y registros de activación.
-
-```powershell
-python compiscript.py examples/compiscript/example.cps
-python compiscript.py examples/compiscript/example.cps --tree
-python compiscript.py examples/compiscript/example.cps --symbols
-python compiscript.py examples/compiscript/example.cps --tac
-python compiscript.py examples/compiscript/example.cps --frames
-python compiscript.py examples/compiscript/example.cps --all
-python compiscript.py --help
-```
-
-**Nota:** el análisis semántico y la generación de TAC no son equivalentes a ejecutar directamente el programa Compiscript como una aplicación independiente. La batería de pruebas de código intermedio incluye un intérprete de TAC para verificar salidas esperadas. Algunas construcciones sintácticamente válidas pueden no estar soportadas por el generador.
-
-Módulos clave: `compiscript/semantic.py`, `symbol_table.py`, `codegen.py`, `tac.py`, `temps.py` y `activation_record.py`. Gramática: `grammars/compiscript/Compiscript.g4`.
-
-## Intérprete SQL con almacenamiento en archivos
-
-Este componente implementa un intérprete SQL **sin SQLite, MySQL, PostgreSQL ni otro DBMS** para almacenar o ejecutar consultas. Utiliza directorios, archivos CSV, `metadata.txt` y archivos JSON para índices.
-
-**Proceso:** SQL → lexer ANTLR → parser ANTLR → AST → análisis semántico → motor de ejecución → archivos → resultados. Los comandos de administración de bases de datos también siguen este recorrido.
-
-### Operaciones soportadas
-
-| Categoría | Funcionalidades |
-|---|---|
-| Administración de bases de datos | `CREATE DATABASE`, `USE`, `SHOW DATABASES`, `SHOW TABLES` |
-| Definición | `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `DROP INDEX` |
-| Manipulación | `INSERT`, `UPDATE`, `DELETE` |
-| Consulta | `SELECT`, `FROM`, `WHERE`, `ORDER BY`, `INNER JOIN` |
-| Condiciones | `AND`, `OR`, `NOT`, `IN`, `NOT IN`, `EXISTS`, `NOT EXISTS`, comparaciones, `IS NULL` |
-| Agregaciones | `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `GROUP BY`, `HAVING` |
-| Subconsultas | `IN`, `NOT IN`, `EXISTS`, `NOT EXISTS` y escalares en condiciones |
-| Tipos | `INT`, `FLOAT`, `VARCHAR(n)`, `BOOLEAN`, `DATE` (`YYYY-MM-DD`) |
-| Restricciones | `PRIMARY KEY`, `UNIQUE`, `NOT NULL` |
-
-### Crear y seleccionar bases de datos desde SQL
-
-El campo **DATABASE** de la interfaz selecciona una carpeta de trabajo. Desde ella, `CREATE DATABASE nombre;` crea una subcarpeta y `USE nombre;` la convierte en la base activa. `SHOW DATABASES;` lista las bases reconocidas en esa carpeta de trabajo y `SHOW TABLES;` lista las tablas de la base activa. **No es necesario utilizar un servidor de bases de datos externo.**
-
-Los cuatro comandos se reconocen en el lexer y parser **ANTLR 4.13.2**, tienen nodos propios en el AST y participan en el análisis semántico y en la ejecución. Por ello, `ANALYZE SQL` permite visualizar sus tokens, árbol y AST, mientras que `EXECUTE SQL` realiza las operaciones de archivos.
-
-**Demostración desde la GUI:** crea y selecciona una carpeta vacía, por ejemplo `bases_datos/`, en `DATABASE`. Pega este script y pulsa `ANALYZE SQL`; después pulsa `EXECUTE SQL`:
+Ejemplo de una base nueva:
 
 ```sql
 CREATE DATABASE universidad;
-SHOW DATABASES;
 USE universidad;
 
-CREATE TABLE estudiantes (
-    id INT PRIMARY KEY,
-    nombre VARCHAR(50) NOT NULL
-);
-INSERT INTO estudiantes VALUES (1, 'Ana');
-INSERT INTO estudiantes VALUES (2, 'Carlos');
-SHOW TABLES;
-SELECT * FROM estudiantes ORDER BY id;
-```
-
-Se creará la estructura:
-
-```text
-bases_datos/
-└── universidad/
-    ├── .compilerlab_db
-    ├── metadata.txt
-    └── estudiantes.csv
-```
-
-El archivo `.compilerlab_db` identifica una base creada por el intérprete. La carpeta activa se actualiza en la GUI después de `USE`. Para volver a ejecutar el ejemplo de creación desde cero, selecciona otra carpeta vacía: `CREATE DATABASE` rechaza nombres existentes.
-
-**Importante:** seleccionar `DATABASE` en la interfaz sigue siendo útil para abrir bases existentes; el comando `USE` cambia la base activa dentro de la carpeta de trabajo. `SHOW DATABASES` no busca todas las bases de tu computadora, solo las del espacio de trabajo seleccionado.
-
-### Archivos de almacenamiento
-
-```text
-database_demo/
-├── metadata.txt
-├── estudiantes.csv
-├── inscripciones.csv
-└── indexes/
-    └── idx_edad.json
-```
-
-`metadata.txt` describe tablas, columnas, tipos, restricciones e índices. Los CSV guardan registros y los JSON mantienen correspondencias entre valores indexados y posiciones de filas. Los índices se reconstruyen al modificar los registros correspondientes.
-
-### Análisis SQL sin ejecutar
-
-`sql.py` muestra tokens, árbol sintáctico, AST y resultados del análisis semántico. **No modifica registros.**
-
-```powershell
-python sql.py examples/sql/query.sql --tokens --tree --ast
-python sql.py examples/sql/query.sql --db database_demo --schema
-python sql.py -e "SELECT nombre FROM estudiantes WHERE edad >= 18;" --tree
-python sql.py --help
-```
-
-### Ejecución SQL real
-
-`ejecutar_sql.py` procesa las sentencias y escribe resultados en archivos. Ejecuta en una base de datos de prueba, por ejemplo:
-
-```powershell
-python ejecutar_sql.py examples/sql/universidad.sql --db database_demo
-```
-
-Si la organización del proyecto movió los ejemplos de demostración a `examples/sql/demos/`, utiliza la ruta correspondiente:
-
-```powershell
-python ejecutar_sql.py examples/sql/demos/consultas_avanzadas.sql --db database_avanzadas_nueva
-```
-
-**Ejemplo autocontenido** (guardar como `ejemplo_personal.sql`):
-
-```sql
 CREATE TABLE estudiantes (
     id INT PRIMARY KEY,
     nombre VARCHAR(50) NOT NULL,
     edad INT
 );
+
 INSERT INTO estudiantes VALUES (1, 'Ana', 20);
 INSERT INTO estudiantes VALUES (2, 'Luis', 22);
-SELECT id, nombre FROM estudiantes WHERE edad >= 18 ORDER BY id;
-UPDATE estudiantes SET edad = 23 WHERE id = 1;
-SELECT * FROM estudiantes ORDER BY id;
+
+SELECT nombre, edad
+FROM estudiantes
+WHERE edad >= 18
+ORDER BY edad DESC;
 ```
 
-```powershell
-python ejecutar_sql.py ejemplo_personal.sql --db database_personal
+**Resultado esperado:** Luis (22) y Ana (20). Los registros se conservan en archivos y pueden consultarse después de reiniciar la aplicación.
+
+> Ejecuta el ejemplo de creación sobre una carpeta de trabajo nueva. Si vuelves a ejecutar `CREATE DATABASE` o `CREATE TABLE` sobre objetos existentes, recibirás errores por duplicidad.
+
+### SQL: funcionalidades incluidas
+
+| Categoría | Operaciones |
+|---|---|
+| Definición | `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `DROP INDEX` |
+| Datos | `INSERT`, `UPDATE`, `DELETE` |
+| Consultas | `SELECT`, `WHERE`, `ORDER BY`, `AND`, `OR`, `INNER JOIN` |
+| Agregación | `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `GROUP BY`, `HAVING` |
+| Subconsultas | `IN`, `NOT IN`, `EXISTS`, `NOT EXISTS` y escalares |
+| Tipos | `INT`, `FLOAT`, `VARCHAR(n)`, `BOOLEAN`, `DATE` |
+| Bases de datos | `CREATE DATABASE`, `USE`, `SHOW DATABASES`, `SHOW TABLES` |
+
+Ejemplo de índice:
+
+```sql
+CREATE INDEX idx_edad ON estudiantes (edad);
+SELECT nombre FROM estudiantes WHERE edad = 20;
+DROP INDEX idx_edad;
 ```
 
-No ejecutes repetidamente scripts que incluyen `CREATE TABLE` sobre la misma carpeta, pues una tabla existente produce un error semántico. Para repetir desde cero, usa una carpeta nueva o elimina **solo una base de prueba** que ya no necesites.
+Los índices se guardan en archivos JSON y se actualizan al modificar registros. La optimización de consultas se centra en condiciones sencillas de igualdad (`columna = literal`); no debe asumirse que todos los predicados utilizan índices.
 
-### Índices y subconsultas
+### Compiscript: generar y ejecutar MIPS
 
-Los índices se almacenan como archivos JSON y se mantienen al ejecutar `INSERT`, `UPDATE` y `DELETE`. El optimizador de consultas usa índices para **igualdades sencillas** de la forma `WHERE columna = literal`; no todas las expresiones complejas usan índices. El intérprete permite subconsultas correlacionadas y comprueba errores como subconsultas escalares con más de una fila.
+1. Selecciona **Compiscript** en el IDE.
+2. Carga un archivo `.cps` desde **CPS (+)**.
+3. Pulsa **COMPILE CPS** para revisar análisis, errores, símbolos y TAC.
+4. Pulsa **BUILD MIPS** para generar ensamblador.
+5. Abre **MIPS CPS** para inspeccionar el código generado.
+6. Pulsa **RUN MIPS** y revisa **Consola MIPS**.
+7. Utiliza **TEST MIPS** para ejecutar la batería de pruebas del generador desde el IDE.
 
-### `NULL` y cadenas vacías
+**Demostraciones incluidas:**
 
-El almacenamiento actual distingue `NULL` de `''` (cadena vacía). En CSV antiguos creados antes de la corrección, las celdas vacías pueden ser ambiguas; haz respaldo antes de reutilizar datos anteriores.
+| Archivo | Qué demuestra | Salida esperada |
+|---|---|---|
+| `entrega_demo/01_funciones_recursion.cps` | Funciones, parámetros y recursión | `120`, `55`, `6` |
+| `entrega_demo/02_strings_booleanos.cps` | Strings, booleanos y condicionales | `Hola Compiscript`, `true`, `true`, `false`, `mayor` |
+| `entrega_demo/03_clases_herencia.cps` | Clases, objetos y herencia | `Luis`, `20`, `2024` |
+| `entrega_demo/04_ciclos_arreglos.cps` | Ciclos y arreglos | `24`, `0`, `1`, `2`, `0`, `10`, `7` |
 
-## Pruebas
+También hay ejemplos de errores semánticos, sintácticos y de ejecución en `entrega_demo/`.
 
-Ejecutar desde la raíz del repositorio:
+---
+
+## Bibliotecas compiladas, importaciones y herencia
+
+Compiler Lab permite **reutilizar clases entre archivos Compiscript**. Además de importar código fuente `.cps`, admite bibliotecas compiladas `.cplobj` que almacenan código MIPS y la información necesaria para enlazar las clases.
+
+### 1. Definir y exportar una clase
+
+En `Animal.cps`:
+
+```typescript
+export class Animal {
+    let edad: integer;
+
+    function constructor() {
+        this.edad = 5;
+    }
+}
+```
+
+### 2. Construir la biblioteca
+
+En el IDE utiliza **BUILD LIB**, o desde la consola:
 
 ```powershell
-# Lexer, parser, AST y semántica SQL
+python compiscript.py Animal.cps --build-library --output build/Animal.cplobj
+```
+
+### 3. Importarla en otro archivo
+
+```typescript
+import { Animal } from "./build/Animal.cplobj";
+
+export class Perro : Animal {
+}
+```
+
+Las rutas de importación son relativas al archivo que realiza el `import`.
+
+### 4. Compilar bibliotecas dependientes
+
+Una biblioteca `Perro.cplobj` puede depender de `Animal.cplobj`. Compila primero la clase padre y después la hija. Las dependencias incluyen verificación de integridad mediante **SHA-256**: si cambia la biblioteca padre, debes reconstruir también las dependientes.
+
+Para una demostración preparada, utiliza los archivos de `entrega_demo/biblioteca/` (`Animal.cps`, `Perro.cps`, `main.cps` y sus bibliotecas en `build/`).
+
+**Restricciones conocidas:** al construir una biblioteca compilada, sus dependencias deben ser otras bibliotecas `.cplobj`, no archivos `.cps` importados como fuente. La construcción de bibliotecas tampoco admite variables globales. Consulta `docs/mips.md` para los detalles del enlace y las cadenas de herencia.
+
+---
+
+## Generación MIPS: detalles técnicos
+
+- **Llamadas y retornos:** uso de `$sp`, `$fp`, `$ra`, `$v0`, argumentos y registros de activación.
+- **Asignación de registros:** `RegisterAllocator.getReg(owner)` administra registros temporales `$t0–$t7`; se utilizan registros `$s0–$s7` para variables seleccionadas que permanecen vivas durante la función.
+- **Uso de memoria:** temporales y valores sin registro disponible se mantienen en la pila; las variables globales se manejan mediante `$gp`.
+- **Ejecución:** el ensamblador generado se valida mediante MARS.
+- **Errores en tiempo de ejecución:** comprobaciones para división entre cero, referencias nulas y accesos inválidos a arreglos, entre otras.
+
+Los detalles del diseño de marcos de activación, preservación de registros y enlace se documentan en [`docs/mips.md`](docs/mips.md).
+
+## Pruebas y validación
+
+Ejecuta desde la raíz del repositorio:
+
+```powershell
+# Suite general
+python -m pytest tests -q --tb=short
+
+# Pruebas específicas del generador MIPS (requiere Java y MARS)
+python tests/mips/run_tests.py -v
+
+# Pruebas del intérprete SQL
 python tests/sql/run_tests.py -v
 
-# Generación de TAC y casos Compiscript
+# Pruebas de generación TAC
 python tests/codegen/run_tests.py -v
-
-# Auditoría funcional del intérprete SQL
-python auditar_sql.py
 ```
 
-En la última auditoría compartida durante el desarrollo, `auditar_sql.py` completó **10 pruebas sin fallos** (creación/consulta, persistencia, UPDATE/DELETE, restricciones, errores, índices, subconsultas y distinción de NULL frente a cadena vacía). Ese resultado corresponde al entorno donde se ejecutó; después de mover archivos o actualizar código, vuelve a correr las pruebas.
+**Última validación reportada del proyecto:** `166 passed, 1 warning` en Python 3.12. La advertencia proviene de una prueba de biblioteca ZIP manipulada que genera una entrada duplicada `module.cps`; no fue una prueba fallida. Este resultado corresponde a la ejecución realizada durante el desarrollo y debe reproducirse en el entorno de entrega.
 
-Las pruebas del intérprete SQL pueden usar carpetas temporales. No ejecutes demostraciones destructivas sobre bases de datos importantes. En la interfaz, **TEST CPS** ejecuta la batería de código intermedio de Compiscript.
+La batería incluye casos de análisis, generación de código, bibliotecas, importaciones y pruebas de integración. Las demostraciones del IDE complementan la suite automatizada, pero no la sustituyen.
 
-## Estructura del proyecto
+---
 
-Estructura lógica de la versión organizada; las carpetas `docs/` y `examples/` pueden contener subcarpetas adicionales, y las bases de datos de prueba se generan al ejecutar los ejemplos:
+## Estructura del repositorio
 
 ```text
 proyecto/
-├── automata/              # AFN, AFD, Thompson, subconjuntos
-├── regex/                 # Parser y nodos de expresiones regulares
-├── yalex/                 # Lectura y generación de analizadores léxicos
-├── yapar/                 # Gramáticas, FIRST/FOLLOW, LR, LL y parsers
-├── compiscript/           # Semántica, símbolos, TAC y memoria
-│   └── generated/         # Lexer y parser generados por ANTLR
-├── sqlengine/             # Frontend, AST, semántica, motor y almacenamiento SQL
-│   ├── database_commands.py  # CREATE DATABASE, USE y SHOW
-│   └── generated/         # Lexer y parser SQL generados por ANTLR
-├── gui/
-│   └── app.py             # Interfaz gráfica integrada
-├── grammars/
-│   ├── java/
-│   ├── compiscript/
-│   └── sql/
-├── examples/
-│   ├── java/
-│   ├── compiscript/
-│   └── sql/
-├── tests/
-│   ├── codegen/
-│   ├── compiscript/
-│   └── sql/
-├── docs/                  # Arquitectura, TAC y documentación SQL
-├── tools/                 # JAR ANTLR
-├── database*/             # Bases de datos de ejemplo/prueba (generadas)
-├── yalex.py               # CLI léxico
-├── yapar.py               # CLI sintáctico
-├── compiscript.py         # CLI Compiscript
-├── sql.py                 # CLI de análisis SQL (no ejecuta)
-├── ejecutar_sql.py        # CLI de ejecución SQL (modifica archivos)
-├── auditar_sql.py         # Auditoría funcional SQL
+├── automata/               # AFN, AFD y algoritmos de construcción
+├── regex/                  # Expresiones regulares
+├── yalex/                  # Generador léxico
+├── yapar/                  # Generador sintáctico
+├── compiscript/            # Semántica, TAC, memoria, MIPS y módulos
+│   ├── generated/          # Analizadores generados por ANTLR
+│   ├── mips/               # Generador, registros y marcos de activación
+│   └── modules/            # Importaciones y bibliotecas compiladas
+├── sqlengine/              # AST, semántica, ejecución y almacenamiento SQL
+│   └── generated/          # Analizadores SQL generados por ANTLR
+├── gui/                    # IDE Tkinter
+├── grammars/               # Especificaciones de gramáticas
+├── examples/               # Ejemplos de los lenguajes y herramientas
+├── entrega_demo/           # Casos para presentación y bibliotecas
+├── tests/                  # Pruebas automatizadas y fixtures
+├── docs/                   # Documentación técnica
+├── tools/                  # Herramientas Java: MARS y ANTLR
+├── build/                  # Resultados y bibliotecas compiladas
+├── compiscript.py          # CLI Compiscript
+├── sql.py                  # CLI de análisis SQL
+├── ejecutar_sql.py         # CLI de ejecución SQL
+├── yalex.py                # CLI YALex
+├── yapar.py                # CLI YAPar
 ├── requirements.txt
 └── README.md
 ```
 
-### Responsabilidades del motor SQL
+Las carpetas de bases de datos y salidas temporales pueden crearse durante la ejecución y estar excluidas mediante `.gitignore`.
 
-| Módulo | Responsabilidad |
+## Documentación adicional
+
+| Documento | Contenido |
 |---|---|
-| `frontend.py` | Análisis léxico y sintáctico |
-| `ast_builder.py`, `ast.py` | Construcción y representación del AST |
-| `semantic.py`, `types.py` | Tipos, nombres, ámbitos y errores semánticos |
-| `catalog.py`, `metadata.py` | Esquemas y metadatos |
-| `storage.py` | Lectura/escritura de tablas CSV |
-| `evaluator.py` | Evaluación de expresiones y conversión de tipos |
-| `query_engine.py` | Consultas, JOIN, agregaciones, UPDATE y DELETE |
-| `indexes.py` | Índices persistentes |
-| `executor.py` | Coordinación de análisis y ejecución, incluidos comandos de base de datos |
-| `database_commands.py` | Creación, selección y listado de bases de datos mediante directorios |
+| [`docs/arquitectura.md`](docs/arquitectura.md) | Arquitectura de Compiscript y análisis semántico |
+| [`docs/CI.md`](docs/CI.md) | Código intermedio y convenciones TAC |
+| [`docs/mips.md`](docs/mips.md) | Generación MIPS, registros, llamadas, bibliotecas y herencia |
+| [`docs/sql_ast.md`](docs/sql_ast.md) | Diseño y construcción del AST SQL |
+| [`docs/sql_semantico.md`](docs/sql_semantico.md) | Validaciones semánticas del intérprete SQL |
 
-## Limitaciones y precauciones
+## Consideraciones y limitaciones
 
-1. **Administración de bases:** `CREATE DATABASE`, `USE` y `SHOW` operan dentro de la carpeta de trabajo; no implementan usuarios, permisos ni un servidor SQL.
-2. **Ejecución SQL sin transacciones completas:** un script puede modificar archivos antes de encontrar un error posterior. Usa bases de prueba y realiza respaldos.
-3. **Índices:** la optimización está enfocada en igualdades simples, no en todos los predicados o combinaciones posibles.
-4. **Compatibilidad de datos antiguos:** el formato CSV anterior a la corrección de `NULL` no permitía distinguir siempre una cadena vacía de un valor nulo.
-5. **Gramáticas y lenguajes:** los analizadores detectan conflictos y errores; no todas las gramáticas son aptas para SLR, LALR y LL(1).
-6. **Compiscript:** ciertas construcciones aceptadas por el parser pueden no tener generación TAC completa; consulta los errores del generador y la documentación de código intermedio.
-7. **Archivos generados:** los comandos pueden producir lexers, imágenes, CSV y JSON. No confundas estos artefactos con los archivos fuente del proyecto.
-8. **Versiones:** utiliza el runtime ANTLR 4.13.2 indicado en `requirements.txt` para evitar incompatibilidades con el código generado.
-
-## Documentación complementaria
-
-- `docs/arquitectura.md`: arquitectura del análisis semántico y generación de TAC de Compiscript.
-- `docs/CI.md`: convenciones e instrucciones del código intermedio.
-- `docs/sql_ast.md`: representación del AST SQL.
-- `docs/sql_semantico.md`: análisis semántico SQL.
-- `python yalex.py --help`, `python yapar.py --help`, `python compiscript.py --help` y `python sql.py --help`: opciones de línea de comandos.
+- El intérprete SQL **no es un servidor de base de datos**: opera sobre archivos locales y no proporciona transacciones completas, control de usuarios ni permisos de un DBMS.
+- Una ejecución SQL puede escribir cambios antes de encontrar un error posterior. Usa una base de pruebas para las demostraciones.
+- No todas las condiciones `WHERE` aprovechan índices; el uso optimizado está orientado a igualdades simples.
+- En Compiscript, `try/catch` no está soportado por el generador TAC. La impresión directa de objetos o arreglos completos no está soportada por el generador MIPS.
+- Los enteros MIPS son de 32 bits y pueden desbordarse.
+- La compatibilidad entre código generado por ANTLR y el runtime instalado depende de la versión; utiliza las dependencias del proyecto.
+- Los programas `.cps` pueden requerir compilación previa de bibliotecas externas cuando utilizan archivos `.cplobj`.
 
 ---
 
-**Compiler Lab** es un proyecto educativo orientado a implementar y visualizar las etapas de construcción de compiladores, así como un intérprete SQL con almacenamiento propio basado en archivos.
+<div align="center">
+
+**Compiler Lab**  
+*Análisis, compilación, interpretación y ejecución: del código fuente al resultado.*
+
+Proyecto académico · Universidad del Valle de Guatemala · 2026
+
+</div>
